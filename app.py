@@ -3,11 +3,12 @@ import pandas as pd
 
 st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide")
 
-# スプレッドシートのベースURL
+# スプレッドシートのベースURL（あなたのURLのままでOKです！）
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA/export?format=csv"
-# 各シートを指定するためのURL
-URL_COUNTRIES = f"{BASE_URL}&gid=0"  # 最初のシート（国の一覧）
-URL_SETTINGS = f"{BASE_URL}&sheet=設定"  # 追加した「設定」シート
+
+# 各シートを確実に引っ張ってくるための新しいURL指定
+URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"
+URL_SETTINGS = f"{BASE_URL}/export?format=csv&sheet=設定"
 
 @st.cache_data(ttl=300)
 def load_data():
