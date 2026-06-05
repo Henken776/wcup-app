@@ -8,7 +8,7 @@ BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJP
 
 # 【確実な方法】シート名ではなく、内部のID（gid）で2つのシートを確実に指定
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（国のリスト）
-URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=1116295759"  # 2番目のシート（設定）
+URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid="460959744"  # 2番目のシート（設定）
 
 @st.cache_data(ttl=300)
 def load_data():
