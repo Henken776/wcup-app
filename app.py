@@ -6,9 +6,9 @@ st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【確実な方法】シート名ではなく、内部のID（gid）で2つのシートを確実に指定
+# 【確定版】あなたの本物のgid番号を使って、2つのシートを完璧に狙い撃ちします
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（国のリスト）
-URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid="460959744"  # 2番目のシート（設定）
+URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定）
 
 @st.cache_data(ttl=300)
 def load_data():
@@ -33,9 +33,7 @@ def load_data():
         # 2. 設定（試合結果・AIメモ）データを読み込み
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
-            # 列名が一致しているか、またはデータがあるか
             if not sett_df.empty:
-                # 列名を安全に取得（インデックス指定で文字の違いを回避）
                 col_results = sett_df.columns[0]
                 col_winner = sett_df.columns[1] if len(sett_df.columns) > 1 else None
                 col_comment = sett_df.columns[2] if len(sett_df.columns) > 2 else None
@@ -47,8 +45,7 @@ def load_data():
                 }
             else:
                 settings = {'results': '', 'winner': '', 'comment': ''}
-        except Exception as e:
-            # 読み込みに失敗した場合は空にする
+        except:
             settings = {'results': '', 'winner': '', 'comment': ''}
             
         return df, settings
