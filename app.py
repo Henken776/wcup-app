@@ -1,153 +1,117 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
-# --- ページ設定 ---
-st.set_page_config(
-    page_title="W杯ドラフトくじ - リアルタイム集計システム",
-    page_icon="🏆",
-    layout="wide"
-)
+st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide")
 
-# --- タイトルと説明 ---
-st.title("🏆 W杯ドラフトくじ リアルタイム集計")
-st.markdown("""
-Googleスプレッドシートのデータとリアルタイムに連携し、現在の順位や払戻シミュレーションを自動で計算・表示します。
-""")
-
-# --- GoogleスプレッドシートのCSVエクスポートURLを設定 ---
-# 【重要】ご自身のスプレッドシートのURL（CSVエクスポート用）に書き換えてください。
-# 例: https://docs.google.com/spreadsheets/d/xxxxxx/export?format=csv
+# スプレッドシートのURL（21行目）
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA/export?format=csv"
 
-@st.cache_data(ttl=300) # 5分間キャッシュ（更新を反映しつつ、サーバーへの負荷を軽減）
-def load_data(url):
+@st.cache_data(ttl=300)
+def load_data():
     try:
-        # スプレッドシートからデータを読み込む
-        df = pd.read_csv(url)
-        
-        # 列名の表記揺れを吸収する処理（日本語・英語どちらでも動くようにします）
-        rename_dict = {
-            "グループ": "グループ",
-            "国名": "国名",
-            "FIFAランク": "FIFAランク",
-            "Odds Rev": "合意オッズ",
-            "Odds": "初期オッズ",
-            "現在勝ち点": "現在勝ち点",
-            "勝ち点": "現在勝ち点",
-            "参加者": "参加者",
-            "所有者": "参加者"
-        }
-        df = df.rename(columns=rename_dict)
-        
-        # 必要な列が足りない場合の補完（エラー防止）
-        if "現在勝ち点" not in df.columns:
-            df["現在勝ち点"] = 0
-        if "参加者" not in df.columns:
-            # デモ用にランダムに参加者を割り振る
-            participants = ["Aさん", "Bさん", "Cさん", "Dさん"]
-            df["参加者"] = [participants[i % len(participants)] for i in range(len(df))]
-        if "合意オッズ" not in df.columns:
-            if "初期オッズ" in df.columns:
-                df["合意オッズ"] = df["初期オッズ"]
-            elif "Odds" in df.columns:
-                df["合意オッズ"] = df["Odds"]
-            else:
-                df["合意オッズ"] = 10.0 # デフォルト
+        df = pd.read_csv(SHEET_URL)
+        # 必須の入力列があるかチェック
+        required_cols = ['グループ', '国名', 'オッズ', '勝ち数', '分け数', '負け数', '参加者']
+        for col in required_cols:
+            if col not in df.columns:
+                st.error(f"スプレッドシートに '{col}' の列が見つかりません。")
+                return None
                 
-        return df, False
+        # データのクレンジングと型変換
+        df['勝ち数'] = df['勝ち数'].fillna(0).astype(int)
+        df['分け数'] = df['分け数'].fillna(0).astype(int)
+        df['負け数'] = df['負け数'].fillna(0).astype(int)
+        df['オッズ'] = df['オッズ'].fillna(1.0).astype(float)
+        
+        # 【ご要望の計算式を完全自動化】
+        # 1. 勝ち点 ＝ 勝ち数×3 ＋ 分け数×1
+        df['勝ち点'] = df['勝ち数'] * 3 + df['分け数'] * 1
+        # 2. ポイント ＝ オッズ × 勝ち点
+        df['ポイント'] = df['オッズ'] * df['勝ち点']
+        
+        return df
     except Exception as e:
-        # スプレッドシートが未設定、または読み込めない場合のサンプルデータ
-        mock_data = {
-            "グループ": ["C組", "E組", "F組", "F組", "D組", "B組", "B組", "A組"],
-            "国名": ["ブラジル", "ドイツ", "日本", "スウェーデン", "トルコ", "カタール", "ボスニア・ヘルツェゴビナ", "メキシコ"],
-            "FIFAランク": [5, 15, 18, 23, 42, 44, 75, 14],
-            "合意オッズ": [4.0, 6.0, 12.0, 12.0, 15.0, 21.0, 33.0, 8.0],
-            "現在勝ち点": [6, 4, 3, 3, 1, 1, 0, 4],
-            "参加者": ["Aさん", "Bさん", "Cさん", "Dさん", "Aさん", "Bさん", "Cさん", "Dさん"]
-        }
-        return pd.DataFrame(mock_data), True
+        st.error(f"データの読み込みに失敗しました: {e}")
+        return None
 
-# データの読み込み
-df, is_mock = load_data(SHEET_URL)
+df = load_data()
 
-if is_mock:
-    st.warning("⚠️ 現在はサンプルデータを表示しています。ご自身のスプレッドシートと連携するには、プログラム（app.py）の21行目にある `SHEET_URL` を書き換えてください。")
-
-# --- 計算処理 ---
-# 各国の想定払戻ポイントの計算 (勝ち点 × 合意オッズ)
-df["想定払戻ポイント"] = df["現在勝ち点"] * df["合意オッズ"]
-
-# 参加者ごとの集計
-summary = df.groupby("参加者").agg(
-    所有国数=("国名", "count"),
-    総勝ち点=("現在勝ち点", "sum"),
-    総想定払戻ポイント=("想定払戻ポイント", "sum")
-).reset_index()
-
-# 払戻ポイントの高い順に並び替え
-summary = summary.sort_values(by="総想定払戻ポイント", ascending=False).reset_index(drop=True)
-summary.index = summary.index + 1
-summary.index.name = "順位"
-
-# --- 画面レイアウト ---
-col1, col2 = st.columns([4, 5])
-
-with col1:
-    st.subheader("👥 参加者ランキング（払戻ポイント順）")
-    st.dataframe(
-        summary.style.format({
-            "総想定払戻ポイント": "{:.1f} pt",
-            "総勝ち点": "{:d} 点"
-        }),
-        use_container_width=True
-    )
+if df is None or df.empty:
+    st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。列名を確認してください。")
+else:
+    # ==========================================
+    # ⚙️ サイドバー：管理人の入力エリア
+    # ==========================================
+    st.sidebar.header("📝 本日のスタッツ更新")
+    st.sidebar.write("ここに当日の結果を入力するとメイン画面に反映されます。")
     
-    # トップ走者のハイライト
-    if not summary.empty:
-        top_user = summary.iloc[0]
-        st.success(f"🥇 現在の暫定トップ: **{top_user['参加者']}** ({top_user['総想定払戻ポイント']:.1f} pt)")
-
-with col2:
-    st.subheader("📊 各国のステータス一覧")
-    # 不要な列を省いてすっきり見せる
-    display_cols = ["グループ", "国名", "FIFAランク", "合意オッズ", "現在勝ち点", "想定払戻ポイント", "参加者"]
-    available_cols = [c for c in display_cols if c in df.columns]
+    # 参加者リスト
+    members = list(df['参加者'].unique())
     
-    st.dataframe(
-        df[available_cols].style.format({
-            "合意オッズ": "{:.1f} 倍",
-            "想定払戻ポイント": "{:.1f} pt"
-        }),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.sidebar.subheader("⚽ ①当日の試合結果")
+    match_results = st.sidebar.text_area("本日のスコアなど", placeholder="例：\n日本 2 - 1 ドイツ\nアルゼンチン 1 - 1 ペルー", height=100)
+    
+    st.sidebar.subheader("🤖 ②AI総評用メモ")
+    top_winner = st.sidebar.selectbox("今日の勝ち頭", ["選択してください"] + members)
+    points_moved = st.sidebar.text_input("ポイントの増減や総評", placeholder="例：あなたに+24pt、Aさんは足踏み")
 
-# --- 簡易シミュレーター ---
-st.divider()
-st.subheader("🔮 勝ち点シミュレーター（もしもボックス）")
-st.info("※ここで数値を変更しても、元のスプレッドシートのデータは壊れません。自由にシミュレーションして遊べます。")
+    # ==========================================
+    # 🏆 メイン画面の表示
+    # ==========================================
+    st.title("🏆 W杯ドラフトくじ 集計システム")
+    
+    # 横並びのレイアウト（結果とAIコメントを最上部に）
+    col_res, col_ai = st.columns(2)
+    
+    with col_res:
+        if match_results:
+            st.subheader("📅 当日の試合結果")
+            st.info(match_results)
+            
+    with col_ai:
+        if top_winner != "選択してください":
+            st.subheader("🤖 今日の勝ち頭＆AIコメント")
+            ai_comment = f"""
+            👑 **【本日の勝ち頭】** 本日の主役は **{top_winner}** さん！見事な引きの強さを発揮しています。  
+            
+            📊 **【戦況アナリティクス】** {points_moved if points_moved else "ゲームが動き、収支ポイントの地殻変動が始まっています！"}
+            """
+            st.success(ai_comment)
+            
+    if match_results or top_winner != "選択してください":
+        st.write("---")
 
-sim_df = df.copy()
-selected_country = st.selectbox("シミュレーションする国を選択してください:", sim_df["国名"].unique())
+    # ==========================================
+    # 1. 参加者ランキング（収支ポイント対応）
+    # ==========================================
+    st.header("📊 参加者ランキング")
+    
+    ranking_df = df.groupby('参加者')['ポイント'].sum().reset_index()
+    ranking_df.columns = ['参加者', '総ポイント']
+    
+    # 全員の平均ポイント
+    average_point = ranking_df['総ポイント'].mean()
+    
+    # 3. 収支ポイント ＝ ポイント ー 全員の平均ポイント
+    ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
+    
+    # 総ポイント順にソート
+    ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
+    
+    # 小数点第1位に丸める
+    ranking_df['総ポイント'] = ranking_df['総ポイント'].round(1)
+    ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
+    
+    st.dataframe(ranking_df, use_container_width=True)
+    st.caption(f"（※現在の全員の平均ポイント: {average_point:.1f} pt）")
 
-# 選択した国の現在の勝ち点を取得
-current_pts = int(sim_df.loc[sim_df["国名"] == selected_country, "現在勝ち点"].values[0])
-new_pts = st.slider(f"【{selected_country}】の現在の勝ち点（{current_pts}点）を仮に変更してみる:", 0, 30, current_pts)
-
-# 反映して再計算
-sim_df.loc[sim_df["国名"] == selected_country, "現在勝ち点"] = new_pts
-sim_df["想定払戻ポイント"] = sim_df["現在勝ち点"] * sim_df["合意オッズ"]
-
-# 再集計
-sim_summary = sim_df.groupby("参加者").agg(
-    総勝ち点=("現在勝ち点", "sum"),
-    総想定払戻ポイント=("想定払戻ポイント", "sum")
-).reset_index().sort_values(by="総想定払戻ポイント", ascending=False).reset_index(drop=True)
-sim_summary.index = sim_summary.index + 1
-
-st.write("▼ シミュレーション後のランキング予想:")
-st.dataframe(
-    sim_summary.style.format({"総想定払戻ポイント": "{:.1f} pt"}),
-    use_container_width=True
-)
+    # ==========================================
+    # 2. 各国の詳細データ一覧（新レイアウト）
+    # ==========================================
+    st.header("⚽ 各国の詳細ステータス")
+    
+    # ご要望の列順に綺麗に並び替えて表示
+    show_df = df[['グループ', '国名', 'オッズ', '勝ち数', '分け数', '負け数', '勝ち点', 'ポイント', '参加者']]
+    
+    # 画面用に「収支ポイント」も仮で結合（国ごとの平均からの差ではなく、ランキング側のみで完結させるため、ここは元の指定項目を表示）
+    st.dataframe(show_df.sort_values(by=['グループ', '国名']), use_container_width=True, hide_index=True)
