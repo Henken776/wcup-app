@@ -4,7 +4,7 @@ import pandas as pd
 st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide")
 
 # スプレッドシートのベースURL
-BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA/export?format=csv"
+https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA/export?format=csv"
 # 各シートを指定するためのURL
 URL_COUNTRIES = f"{BASE_URL}&gid=0"  # 最初のシート（国の一覧）
 URL_SETTINGS = f"{BASE_URL}&sheet=設定"  # 追加した「設定」シート
