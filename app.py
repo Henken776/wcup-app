@@ -3,12 +3,12 @@ import pandas as pd
 
 st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide")
 
-# スプレッドシートのベースURL（あなたのURLのままでOKです！）
+# スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 各シートを引っ張ってくるための正しいURL
-URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"
-URL_SETTINGS = f"{BASE_URL}/export?format=csv&sheet=設定"
+# 【確実な方法】シート名ではなく、内部のID（gid）で2つのシートを確実に指定
+URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（国のリスト）
+URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=1116295759"  # 2番目のシート（設定）
 
 @st.cache_data(ttl=300)
 def load_data():
@@ -33,15 +33,22 @@ def load_data():
         # 2. 設定（試合結果・AIメモ）データを読み込み
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
+            # 列名が一致しているか、またはデータがあるか
             if not sett_df.empty:
+                # 列名を安全に取得（インデックス指定で文字の違いを回避）
+                col_results = sett_df.columns[0]
+                col_winner = sett_df.columns[1] if len(sett_df.columns) > 1 else None
+                col_comment = sett_df.columns[2] if len(sett_df.columns) > 2 else None
+                
                 settings = {
-                    'results': sett_df['今日の試合結果'].fillna('').iloc[0],
-                    'winner': sett_df['今日の勝ち頭'].fillna('').iloc[0],
-                    'comment': sett_df['AIヘンケンの一言'].fillna('').iloc[0]
+                    'results': sett_df[col_results].fillna('').iloc[0] if col_results else '',
+                    'winner': sett_df[col_winner].fillna('').iloc[0] if col_winner else '',
+                    'comment': sett_df[col_comment].fillna('').iloc[0] if col_comment else ''
                 }
             else:
                 settings = {'results': '', 'winner': '', 'comment': ''}
-        except:
+        except Exception as e:
+            # 読み込みに失敗した場合は空にする
             settings = {'results': '', 'winner': '', 'comment': ''}
             
         return df, settings
@@ -52,7 +59,7 @@ def load_data():
 df, settings = load_data()
 
 if df is None or df.empty:
-    st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。シート名や列名を確認してください。")
+    st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。シートの列名（グループ、国名など）を確認してください。")
 else:
     st.title("🏆 W杯ドラフトくじ 集計システム")
     
@@ -65,7 +72,7 @@ else:
         with col_res:
             if settings['results']:
                 st.subheader("📅 今日の試合結果")
-                st.info(settings['results'].replace('\n', '  \n'))
+                st.info(str(settings['results']).replace('\n', '  \n'))
                 
         with col_ai:
             if settings['winner']:
