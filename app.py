@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide")
+st.set_page_config(page_title="W杯サッカーくじ集計システム", layout="wide")
 
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【プランA・自動煽り演出版】
+# 【プランA・自動煽り＋レジェンド演出版】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・AIヘンケン）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -62,7 +62,24 @@ df_master, df_odds, settings, df_today_games = load_data()
 if df_master is None or df_master.empty:
     st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
 else:
-    st.title("🏆 W杯ドラフトくじ 集計システム")
+    # 題名を「W杯サッカーくじ集計システム」に変更
+    st.title("🏆 W杯サッカーくじ集計システム")
+    
+    # レジェンドたちのドラマをイメージしたテキストとデザイン枠
+    st.markdown(
+        """
+        <div style="background-color: #1e293b; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+            <p style="color: #f8fafc; font-size: 1.1em; font-weight: bold; margin: 0; letter-spacing: 1px;">
+                ⚽ LEGENDS OF THE WORLD CUP ⚽
+            </p>
+            <p style="color: #94a3b8; font-size: 0.9em; margin: 5px 0 0 0;">
+                マラドーナの神の手、バッジオの悲劇、ジーコの芸術、ジダンのカリスマ、そして長谷部の統率力――。<br>
+                偉大なる歴史を紡いだ名将・ファンタジスタたちが見守る、ガチのポイント大戦争へようこそ！
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
     
     # ==========================================
     # 📢 試合結果 ＆ AIヘンケン（自動煽り）表示エリア
@@ -80,30 +97,25 @@ else:
     with col_ai:
         st.subheader("🤖 AIヘンケン戦況アナリティクス")
         
-        # 「今日の試合」と「参加者オッズ」をドッキングして、今日一番稼いだ人と外した人を割り出す
         if not df_today_games.empty and not df_odds.empty:
             df_today_player = pd.merge(df_odds, df_today_games[['国名', 'ポイント', 'オッズ']], on='国名', how='inner')
             
             if not df_today_player.empty:
-                # 参加者ごとに今日稼いだポイントを合計
                 today_ranking = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
                 today_ranking = today_ranking.sort_values(by='ポイント', ascending=False).reset_index(drop=True)
                 
-                # トップとワーストの取得
                 top_player = today_ranking.iloc[0]['参加者']
                 top_pt = today_ranking.iloc[0]['ポイント']
                 
-                # 今日ポイントが動いた人の中で最下位（または0ポイントの不運枠）
                 worst_player = today_ranking.iloc[-1]['参加者']
                 worst_pt = today_ranking.iloc[-1]['ポイント']
                 
-                # 煽りメッセージの生成
                 ai_comment = f"""
                 👑 **【本日の大富豪（勝ち頭）】** スポットライトは **{top_player}** さん！今日だけで **+{top_pt:.1f} pt** を荒稼ぎしました。  
                 「完全に味を占めていますね。今夜は高級なビールでも飲んでいることでしょう。妬ましい！」  
                 
                 ☠️ **【本日のドロ沼王（不運）】** 逆に、本日一番イマイチだったのは **{worst_player}** さん（本日: {worst_pt:.1f} pt）。  
-                「大丈夫です、W杯はまだ始まったばかり。…まあ、ここから巻き返せた人がいるかは偏見ですが知りませんけどね！」
+                「大丈夫です、W杯はまだ始まったばかり。…まあ、ここから巻き返できた人がいるかは偏見ですが知りませんけどね！」
                 """
                 st.success(ai_comment)
             else:
