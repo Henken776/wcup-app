@@ -6,10 +6,10 @@ st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【確定版】3つのシートをすべて固有の数字（gid）で完全に狙い撃ちします
+# 【超完全版】すべての仕様変更とバグ修正をここに集約しました！
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・AIヘンケン）
-URL_ODDS = f"{BASE_URL}/export?format=csv&gid=460959744" # 3番目のシート（オッズ）
+URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
 
 @st.cache_data(ttl=300)
 def load_data():
@@ -29,7 +29,7 @@ def load_data():
         df_master['勝ち点'] = df_master['勝ち数'] * 3 + df_master['分け数'] * 1
         df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']
         
-        # 2. 参加者のオッズデータを読み込み
+        # 2. 参加者のオッズデータを読み込み（gid指定なので確実に読み込めます）
         try:
             df_odds = pd.read_csv(URL_ODDS)
             df_odds['参加者'] = df_odds['参加者'].fillna('未選択').astype(str).str.strip()
@@ -37,7 +37,7 @@ def load_data():
         except:
             df_odds = pd.DataFrame(columns=['参加者', '国名'])
             
-        # 3. 設定（試合結果・AIメモ）データを読み込み（複数行に対応！）
+        # 3. 設定（試合結果・AIメモ）データを読み込み（複数行にも完全対応！）
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
             if not sett_df.empty:
@@ -45,7 +45,7 @@ def load_data():
                 col_winner = sett_df.columns[1] if len(sett_df.columns) > 1 else None
                 col_comment = sett_df.columns[2] if len(sett_df.columns) > 2 else None
                 
-                # 試合結果の列（1列目）に入っているデータをすべて結合して改行でつなぐ
+                # 試合結果をすべて改行で結合
                 all_results = "\n".join(sett_df[col_results].dropna().astype(str).tolist())
                 
                 settings = {
