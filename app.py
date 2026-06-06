@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【プランA・レジェンドビジュアル完全融合版】
+# 【確定安定版】タイトル変更＆全自動集計のシンプル仕様です
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・AIヘンケン）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -64,29 +64,7 @@ if df_master is None or df_master.empty:
 else:
     # 題名
     st.title("🏆 W杯サッカーくじ集計システム")
-    
-    # 🎨 ジーコ、ジダン、バッジオ、長谷部、マラドーナを表現したドラマチックなオリジナルデジタルバナー
-    st.markdown(
-        """
-        <div style="background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=1200&q=80'); 
-                    background-size: cover; background-position: center; padding: 35px 20px; border-radius: 12px; text-align: center; margin-bottom: 25px; border: 2px solid #3b82f6; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px; font-size: 1.3em;">
-                <span style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; padding: 4px 12px; border-radius: 20px; color: #fca5a5; font-weight: bold;">🇦🇷 MARADONA</span>
-                <span style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; padding: 4px 12px; border-radius: 20px; color: #93c5fd; font-weight: bold;">🇨🇵 ZIDANE</span>
-                <span style="background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; padding: 4px 12px; border-radius: 20px; color: #6ee7b7; font-weight: bold;">🇧🇷 ZICO</span>
-                <span style="background: rgba(139, 92, 246, 0.2); border: 1px solid #8b5cf6; padding: 4px 12px; border-radius: 20px; color: #c4b5fd; font-weight: bold;">🇮🇹 BAGGIO</span>
-                <span style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; padding: 4px 12px; border-radius: 20px; color: #fde047; font-weight: bold;">🇯🇵 HASEBE</span>
-            </div>
-            <h2 style="color: #ffffff; font-family: 'Impact', sans-serif; font-size: 2.2em; margin: 10px 0; letter-spacing: 2px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">
-                THE STAGE OF LEGENDS
-            </h2>
-            <p style="color: #cbd5e1; font-size: 1.0em; max-width: 800px; margin: 0 auto; line-height: 1.6; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">
-                マラドーナの神がかり的な突破力、ジダンの美しき統率、ジーコの至高の創造性、バッジオの不屈のファンタジー、そして長谷部誠の揺るぎない「心を整える」キャプテンシー。時代を超えた5人の魂が、このサッカーくじの戦況を見守る！
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.write("---")
     
     # ==========================================
     # 📢 試合結果 ＆ AIヘンケン（自動煽り）表示エリア
