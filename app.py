@@ -9,7 +9,7 @@ BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJP
 # 【完全自動連動版】3つのシートを完璧に組み合わせて集計します
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・AIヘンケン）
-URL_ODDS = f"{BASE_URL}/export?format=csv&sheet=オッズ"         # 3番目のシート（誰がどの国をオッズしたか）
+URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841"         # 3番目のシート（誰がどの国をオッズしたか）
 
 @st.cache_data(ttl=300)
 def load_data():
