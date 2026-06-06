@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯ドラフトくじシステム", layout="wide
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【超完全版】すべての仕様変更とバグ修正をここに集約しました！
+# 【プランA・自動煽り演出版】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・AIヘンケン）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -19,7 +19,7 @@ def load_data():
         for col in ['グループ', '国名', 'オッズ', '勝ち数', '分け数', '負け数']:
             if col not in df_master.columns:
                 st.error(f"「シート1」に '{col}' の列が見つかりません。")
-                return None, None, None
+                return None, None, None, None
         
         df_master['勝ち数'] = df_master['勝ち数'].fillna(0).astype(int)
         df_master['分け数'] = df_master['分け数'].fillna(0).astype(int)
@@ -29,7 +29,10 @@ def load_data():
         df_master['勝ち点'] = df_master['勝ち数'] * 3 + df_master['分け数'] * 1
         df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']
         
-        # 2. 参加者のオッズデータを読み込み（gid指定なので確実に読み込めます）
+        # 【今日のポイント計算用】「勝ち数」か「分け数」が1以上の国だけを抽出
+        df_today_games = df_master[(df_master['勝ち数'] > 0) | (df_master['分け数'] > 0)].copy()
+        
+        # 2. 参加者のオッズデータを読み込み
         try:
             df_odds = pd.read_csv(URL_ODDS)
             df_odds['参加者'] = df_odds['参加者'].fillna('未選択').astype(str).str.strip()
@@ -37,55 +40,78 @@ def load_data():
         except:
             df_odds = pd.DataFrame(columns=['参加者', '国名'])
             
-        # 3. 設定（試合結果・AIメモ）データを読み込み（複数行にも完全対応！）
+        # 3. 設定（試合結果）データを読み込み
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
             if not sett_df.empty:
                 col_results = sett_df.columns[0]
-                col_winner = sett_df.columns[1] if len(sett_df.columns) > 1 else None
-                col_comment = sett_df.columns[2] if len(sett_df.columns) > 2 else None
-                
-                # 試合結果をすべて改行で結合
                 all_results = "\n".join(sett_df[col_results].dropna().astype(str).tolist())
-                
-                settings = {
-                    'results': all_results,
-                    'winner': sett_df[col_winner].fillna('').iloc[0] if col_winner else '',
-                    'comment': sett_df[col_comment].fillna('').iloc[0] if col_comment else ''
-                }
+                settings = {'results': all_results}
             else:
-                settings = {'results': '', 'winner': '', 'comment': ''}
+                settings = {'results': ''}
         except:
-            settings = {'results': '', 'winner': '', 'comment': ''}
+            settings = {'results': ''}
             
-        return df_master, df_odds, settings
+        return df_master, df_odds, settings, df_today_games
     except Exception as e:
         st.error(f"データの読み込みに失敗しました: {e}")
-        return None, None, None
+        return None, None, None, None
 
-df_master, df_odds, settings = load_data()
+df_master, df_odds, settings, df_today_games = load_data()
 
 if df_master is None or df_master.empty:
     st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
 else:
     st.title("🏆 W杯ドラフトくじ 集計システム")
     
-    # 📢 試合結果 ＆ AIヘンケンの一言 表示エリア
-    if settings and (settings['results'] or settings['winner']):
-        col_res, col_ai = st.columns(2)
-        with col_res:
-            if settings['results']:
-                st.subheader("📅 今日の試合結果")
-                st.info(settings['results'].replace('\n', '  \n'))
-        with col_ai:
-            if settings['winner']:
-                st.subheader("🤖 AIヘンケンの一言")
+    # ==========================================
+    # 📢 試合結果 ＆ AIヘンケン（自動煽り）表示エリア
+    # ==========================================
+    st.write("---")
+    col_res, col_ai = st.columns(2)
+    
+    with col_res:
+        st.subheader("📅 今日の試合結果")
+        if settings and settings['results']:
+            st.info(settings['results'].replace('\n', '  \n'))
+        else:
+            st.info("本日の試合結果はまだ登録されていません。")
+            
+    with col_ai:
+        st.subheader("🤖 AIヘンケン戦況アナリティクス")
+        
+        # 「今日の試合」と「参加者オッズ」をドッキングして、今日一番稼いだ人と外した人を割り出す
+        if not df_today_games.empty and not df_odds.empty:
+            df_today_player = pd.merge(df_odds, df_today_games[['国名', 'ポイント', 'オッズ']], on='国名', how='inner')
+            
+            if not df_today_player.empty:
+                # 参加者ごとに今日稼いだポイントを合計
+                today_ranking = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
+                today_ranking = today_ranking.sort_values(by='ポイント', ascending=False).reset_index(drop=True)
+                
+                # トップとワーストの取得
+                top_player = today_ranking.iloc[0]['参加者']
+                top_pt = today_ranking.iloc[0]['ポイント']
+                
+                # 今日ポイントが動いた人の中で最下位（または0ポイントの不運枠）
+                worst_player = today_ranking.iloc[-1]['参加者']
+                worst_pt = today_ranking.iloc[-1]['ポイント']
+                
+                # 煽りメッセージの生成
                 ai_comment = f"""
-                👑 **【本日の勝ち頭】** 今回のスポットライトは **{settings['winner']}** さん！見事な勝負勘を発揮しています。  
-                📊 **【ヘンケン戦況アナリティクス】** {settings['comment'] if settings['comment'] else "各国の勝敗が動き、収支ポイントの地殻変動が始まっています！"}
+                👑 **【本日の大富豪（勝ち頭）】** スポットライトは **{top_player}** さん！今日だけで **+{top_pt:.1f} pt** を荒稼ぎしました。  
+                「完全に味を占めていますね。今夜は高級なビールでも飲んでいることでしょう。妬ましい！」  
+                
+                ☠️ **【本日のドロ沼王（不運）】** 逆に、本日一番イマイチだったのは **{worst_player}** さん（本日: {worst_pt:.1f} pt）。  
+                「大丈夫です、W杯はまだ始まったばかり。…まあ、ここから巻き返せた人がいるかは偏見ですが知りませんけどね！」
                 """
                 st.success(ai_comment)
-        st.write("---")
+            else:
+                st.write("⚽ 「シート1」で本日勝利した国の『勝ち数』が増えると、ここにAIの辛口レビューが出現します！")
+        else:
+            st.write("⚽ 「シート1」で本日勝利した国の『勝ち数』が増えると、ここにAIの辛口レビューが出現します！")
+            
+    st.write("---")
 
     # 1. 参加者ランキング
     st.header("📊 参加者ランキング")
