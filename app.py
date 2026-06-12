@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【A列・B列完全分離版】A列＝試合結果、B列＝管理人のコメントとして読み込みます
+# 【B列全行読み込み版】B列に書かれたコメントをすべて合体させて表示します
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -37,7 +37,7 @@ def load_data():
         except:
             df_odds = pd.DataFrame(columns=['参加者', '国名'])
             
-        # 3. 設定（A列：試合結果 ＆ B列：俺の一言）データを読み込み
+        # 3. 設定（A列：試合結果 ＆ B列：俺の一言すべて）データを読み込み
         settings = {'results': '', 'my_comment': ''}
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
@@ -47,13 +47,13 @@ def load_data():
                 all_results = "\n".join(sett_df[col_results].dropna().astype(str).tolist())
                 settings['results'] = all_results
                 
-                # B列（2列目）：管理人のコメント（1行目に入っている文字を取得）
+                # B列（2列目）：管理人のコメント（入っている行をすべて結合）
                 if len(sett_df.columns) >= 2:
                     col_comment = sett_df.columns[1]
-                    # B列の空でない最初のデータを取得
-                    valid_comments = sett_df[col_comment].dropna().tolist()
-                    if valid_comments:
-                        settings['my_comment'] = str(valid_comments[0])
+                    all_comments = sett_df[col_comment].dropna().astype(str).tolist()
+                    if all_comments:
+                        # 2行以上のコメントがある場合は改行でつなぐ
+                        settings['my_comment'] = "\n\n".join(all_comments)
         except Exception as e:
             st.error(f"設定シートの読み込みエラー: {e}")
             
@@ -86,7 +86,7 @@ else:
     with col_my:
         st.subheader("🏆 今日の勝ち頭（不定期更新）")
         if settings and settings['my_comment']:
-            # B列に書かれたコメントをグリーンの枠に表示
+            # B列に書かれたすべてのコメントをグリーンの枠に改行付きで表示
             st.success(settings['my_comment'].replace('\n', '  \n'))
         else:
             st.success("ここに管理人からの熱い戦況コメントや、本日の勝ち頭への煽りが表示されます！")
