@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【確定安定版】タイトル変更＆全自動集計のシンプル仕様です
+# 【バグ修正版】大富豪とドロ沼王の重複を防止するロジックを追加しました
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・AIヘンケン）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -85,22 +85,29 @@ else:
             df_today_player = pd.merge(df_odds, df_today_games[['国名', 'ポイント', 'オッズ']], on='国名', how='inner')
             
             if not df_today_player.empty:
+                # 参加者ごとに今日稼いだポイントを合計
                 today_ranking = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
                 today_ranking = today_ranking.sort_values(by='ポイント', ascending=False).reset_index(drop=True)
                 
+                # トップの取得
                 top_player = today_ranking.iloc[0]['参加者']
                 top_pt = today_ranking.iloc[0]['ポイント']
                 
-                worst_player = today_ranking.iloc[-1]['参加者']
-                worst_pt = today_ranking.iloc[-1]['ポイント']
+                # メッセージの初期化
+                ai_comment = f"""👑 **【本日の大富豪（勝ち頭）】** スポットライトは **{top_player}** さん！今日だけで **+{top_pt:.1f} pt** を荒稼ぎしました。  
+                「完全に味を占めていますね。今夜は高級なビールでも飲んでいることでしょう。妬ましい！」"""
                 
-                ai_comment = f"""
-                👑 **【本日の大富豪（勝ち頭）】** スポットライトは **{top_player}** さん！今日だけで **+{top_pt:.1f} pt** を荒稼ぎしました。  
-                「完全に味を占めていますね。今夜は高級なビールでも飲んでいることでしょう。妬ましい！」  
+                # 今日動いた人が「2人以上」いて、かつトップとラストの人が違う場合だけドロ沼王を表示
+                if len(today_ranking) > 1:
+                    worst_player = today_ranking.iloc[-1]['参加者']
+                    worst_pt = today_ranking.iloc[-1]['ポイント']
+                    
+                    if top_player != worst_player:
+                        ai_comment += f"""
+                        
+☠️ **【本日のドロ沼王（不運）】** 逆に、本日一番イマイチだったのは **{worst_player}** さん（本日: {worst_pt:.1f} pt）。  
+「大丈夫です、W杯はまだ始まったばかり。…まあ、ここから巻き返せた人がいるかは偏見ですが知りませんけどね！」"""
                 
-                ☠️ **【本日のドロ沼王（不運）】** 逆に、本日一番イマイチだったのは **{worst_player}** さん（本日: {worst_pt:.1f} pt）。  
-                「大丈夫です、W杯はまだ始まったばかり。…まあ、ここから巻き返できた人がいるかは偏見ですが知りませんけどね！」
-                """
                 st.success(ai_comment)
             else:
                 st.write("⚽ 「シート1」で本日勝利した国の『勝ち数』が増えると、ここにAIの辛口レビューが出現します！")
