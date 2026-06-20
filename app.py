@@ -7,10 +7,10 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【日付の自動認識バグを完全に修正したバージョン】
+# 各シートのID（固定化しました）
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
-URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
+URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841"     # 3番目のシート（オッズ）
 
 @st.cache_data(ttl=300)
 def load_data():
@@ -69,7 +69,7 @@ def load_data():
         except Exception as e:
             st.error(f"設定シートの読み込みエラー: {e}")
             
-        # 日付文字列を正しく「月/日」の数値ベースでソートして正確な並びを保証する
+        # 日付文字列を「月/日」の数値ベースでソート
         def parse_date_key(date_str):
             try:
                 m, d = map(int, date_str.split('/'))
@@ -111,7 +111,7 @@ else:
     st.write("---")
     
     # ==========================================
-    # 📢 📅 今日の勝ち頭（2日分） ＆ 管理人コメントエリア
+    # 📢 今日の勝ち頭（2日分） ＆ 管理人コメントエリア
     # ==========================================
     col_history, col_my = st.columns(2)
     
@@ -119,9 +119,8 @@ else:
         st.subheader("📅 今日の勝ち頭（2日分）")
         
         if date_list:
-            # ソート済みのリストから最新の2日分を正しく取得
+            # 最新の2日分を取得
             latest_dates = date_list[-2:]
-            # 画面上は新しい日付（本日分）を上にしたいので逆順にする
             latest_dates.reverse()
             
             for idx, dt in enumerate(latest_dates):
@@ -144,13 +143,12 @@ else:
     st.write("---")
 
     # ==========================================
-    # 1. 参加者ランキング（最新日付と連動）
+    # 1. 参加者ランキング（最新日付と100%連動）
     # ==========================================
     st.header("📊 参加者ランキング")
     if not df_odds.empty and len(df_odds) > 0:
-        # 正しくソートされたdate_listの一番最後（＝絶対に一番新しい日付）を取得
         latest_date_str = date_list[-1] if date_list else "当日"
-        today_col_name = f"{latest_date_str} ポイント"  # 例: "6/19 ポイント"
+        today_col_name = f"{latest_date_str} ポイント"
         
         df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
         df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0)
@@ -158,30 +156,8 @@ else:
         ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
         ranking_df.columns = ['参加者', '総ポイント']
         
-        # 最新日（一番新しい日付）のポイントのみを正確に計算
         df_today_points = pd.DataFrame(columns=['参加者', today_col_name])
         if date_list:
             latest_date = date_list[-1]
             df_today_master = df_master[df_master['国名'].isin(day_data[latest_date])].copy()
-            df_today_player = pd.merge(df_odds, df_today_master[['国名', 'ポイント']], on='国名', how='inner')
-            if not df_today_player.empty:
-                df_today_points = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
-                df_today_points.columns = ['参加者', today_col_name]
-
-        if not df_today_points.empty:
-            ranking_df = pd.merge(ranking_df, df_today_points, on='参加者', how='left')
-            ranking_df[today_col_name] = ranking_df[today_col_name].fillna(0)
-        else:
-            ranking_df[today_col_name] = 0.0
-        
-        average_point = ranking_df['総ポイント'].mean()
-        ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
-        ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
-        
-        ranking_df['総ポイント'] = ranking_df['総ポイント'].round(1)
-        ranking_df[today_col_name] = ranking_df[today_col_name].round(1)
-        ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
-        
-        ranking_df = ranking_df[['参加者', '総ポイント', today_col_name, '収支ポイント']]
-        
-        st.dataframe(
+            df_today_player = pd.merge(df_odds, df_today
