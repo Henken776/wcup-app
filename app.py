@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【ランキングに当日ポイント追加版】
+# 【48カ国一覧の列並び替え版】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -49,7 +49,7 @@ def load_data():
                 raw_lines = sett_df[col_results].dropna().astype(str).tolist()
                 settings['results_raw'] = "\n".join(raw_lines)
                 
-                # 日付データの解析 (例: "6/19, 韓国")
+                # 日付データの解析
                 parsed_games = []
                 for line in raw_lines:
                     if ',' in line:
@@ -60,7 +60,6 @@ def load_data():
                 
                 if parsed_games:
                     df_parsed = pd.DataFrame(parsed_games)
-                    # 最下行の日付を「当日」とする
                     target_date = df_parsed.iloc[-1]['date']
                     today_countries = df_parsed[df_parsed['date'] == target_date]['国名'].tolist()
                 
@@ -112,7 +111,6 @@ else:
                 df_today_points_summary = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
                 df_today_points_summary.columns = ['参加者', '当日ポイント']
                 
-                # 勝ち頭の選出
                 today_ranking_sorted = df_today_points_summary.sort_values(by='当日ポイント', ascending=False).reset_index(drop=True)
                 top_player = today_ranking_sorted.iloc[0]['参加者']
                 top_pt = today_ranking_sorted.iloc[0]['当日ポイント']
@@ -126,38 +124,30 @@ else:
             
     st.write("---")
 
-    # ==========================================
-    # 1. 参加者ランキング（当日ポイント列を追加）
-    # ==========================================
+    # 1. 参加者ランキング
     st.header("📊 参加者ランキング")
     if not df_odds.empty and len(df_odds) > 0:
-        # トータルポイントの計算
         df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
         df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0)
         
         ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
         ranking_df.columns = ['参加者', '総ポイント']
         
-        # 当日ポイントのドッキング（今日ポイントがなかった人は0点にする）
         if not df_today_points_summary.empty:
             ranking_df = pd.merge(ranking_df, df_today_points_summary, on='参加者', how='left')
             ranking_df['当日ポイント'] = ranking_df['当日ポイント'].fillna(0)
         else:
             ranking_df['当日ポイント'] = 0.0
         
-        # 収支ポイント（総ポイント - 平均ポイント）の計算
         average_point = ranking_df['総ポイント'].mean()
         ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
         
-        # 総ポイント順に並び替え
         ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
         
-        # 見やすさのために数値を丸める
         ranking_df['総ポイント'] = ranking_df['総ポイント'].round(1)
         ranking_df['当日ポイント'] = ranking_df['当日ポイント'].round(1)
         ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
         
-        # 列の順番をきれいに並び替え
         ranking_df = ranking_df[['参加者', '総ポイント', '当日ポイント', '収支ポイント']]
         
         st.dataframe(ranking_df, use_container_width=True)
@@ -165,7 +155,9 @@ else:
     else:
         st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
 
-    # 2. 各国の詳細データ一覧
+    # ==========================================
+    # 2. 各国の詳細データ一覧（列順をご指定の形に並び替え）
+    # ==========================================
     st.header("⚽ 全48カ国 ステータス一覧")
     if not df_odds.empty:
         df_owners = df_odds.groupby('国名')['参加者'].apply(lambda x: ', '.join(x)).reset_index()
@@ -176,5 +168,11 @@ else:
         df_final_show['オッズした人'] = '—（未選択）'
         
     df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
-    show_df = df_final_show[['グループ', '国名', 'オッズ', '勝ち数', '分け数', '負け数', '勝ち点', 'ポイント', 'オッズした人']]
+    
+    # 🌟 ここで列の並び順を「グループ、国名、ポイント、オッズした人、オッズ、勝ち数、分け数、負け数、勝ち点」に変更しました
+    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '勝ち点']]
+    
+    # ポイントが見やすいように小数第1位までに丸める
+    show_df['ポイント'] = show_df['ポイント'].round(1)
+    
     st.dataframe(show_df.sort_values(by=['グループ', '国名']), use_container_width=True, hide_index=True)
