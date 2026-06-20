@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【B列全行読み込み版】B列に書かれたコメントをすべて合体させて表示します
+# 【当日ポイント勝ち頭完全対応版】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -19,7 +19,7 @@ def load_data():
         for col in ['グループ', '国名', 'オッズ', '勝ち数', '分け数', '負け数']:
             if col not in df_master.columns:
                 st.error(f"「シート1」に '{col}' の列が見つかりません。")
-                return None, None, None
+                return None, None, None, None, None
         
         df_master['勝ち数'] = df_master['勝ち数'].fillna(0).astype(int)
         df_master['分け数'] = df_master['分け数'].fillna(0).astype(int)
@@ -37,59 +37,93 @@ def load_data():
         except:
             df_odds = pd.DataFrame(columns=['参加者', '国名'])
             
-        # 3. 設定（A列：試合結果 ＆ B列：俺の一言すべて）データを読み込み
-        settings = {'results': '', 'my_comment': ''}
+        # 3. 設定（A列：試合結果日付 ＆ B列：コメント）データを読み込み
+        settings = {'results_raw': '', 'my_comment': ''}
+        today_countries = []
+        target_date = ""
+        
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
             if not sett_df.empty:
-                # A列（1列目）：試合結果のリスト
                 col_results = sett_df.columns[0]
-                all_results = "\n".join(sett_df[col_results].dropna().astype(str).tolist())
-                settings['results'] = all_results
+                raw_lines = sett_df[col_results].dropna().astype(str).tolist()
+                settings['results_raw'] = "\n".join(raw_lines)
                 
-                # B列（2列目）：管理人のコメント（入っている行をすべて結合）
+                # 日付データの解析 (例: "6/19, 韓国")
+                parsed_games = []
+                for line in raw_lines:
+                    if ',' in line:
+                        parts = line.split(',', 1)
+                        dt = parts[0].strip()
+                        c_name = parts[1].strip()
+                        parsed_games.append({'date': dt, '国名': c_name})
+                
+                if parsed_games:
+                    df_parsed = pd.DataFrame(parsed_games)
+                    # 最下行の日付を「当日」とする
+                    target_date = df_parsed.iloc[-1]['date']
+                    today_countries = df_parsed[df_parsed['date'] == target_date]['国名'].tolist()
+                
+                # B列：管理人のコメントをすべて結合
                 if len(sett_df.columns) >= 2:
                     col_comment = sett_df.columns[1]
                     all_comments = sett_df[col_comment].dropna().astype(str).tolist()
                     if all_comments:
-                        # 2行以上のコメントがある場合は改行でつなぐ
                         settings['my_comment'] = "\n\n".join(all_comments)
         except Exception as e:
             st.error(f"設定シートの読み込みエラー: {e}")
             
-        return df_master, df_odds, settings
+        return df_master, df_odds, settings, today_countries, target_date
     except Exception as e:
         st.error(f"データの読み込みに失敗しました: {e}")
-        return None, None, None
+        return None, None, None, None, None
 
-df_master, df_odds, settings = load_data()
+df_master, df_odds, settings, today_countries, target_date = load_data()
 
 if df_master is None or df_master.empty:
     st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
 else:
-    # 題名
     st.title("🏆 W杯サッカーくじ集計システム")
     st.write("---")
     
     # ==========================================
-    # 📢 試合結果 ＆ 今日の勝ち頭（不定期更新）エリア
+    # 📢 試合結果 ＆ 今日のポイント勝ち頭表示エリア
     # ==========================================
     col_res, col_my = st.columns(2)
     
     with col_res:
-        st.subheader("📅 今日の試合結果")
-        if settings and settings['results']:
-            st.info(settings['results'].replace('\n', '  \n'))
+        st.subheader("📅 本日の対象国")
+        if target_date and today_countries:
+            st.info(f"**【本日 {target_date} の集計対象】** \n" + "、".join(today_countries))
+        elif settings['results_raw']:
+            st.info(settings['results_raw'].replace('\n', '  \n'))
         else:
-            st.info("本日の試合結果はまだ登録されていません。")
+            st.info("本日の対象国はまだ登録されていません。")
             
     with col_my:
-        st.subheader("🏆 今日の勝ち頭（不定期更新）")
+        # 当日の対象国データから「本日最もポイントを稼いだ人」を算出
+        calculated_header = "🏆 今日の勝ち頭（不定期更新）"
+        
+        if today_countries and not df_odds.empty:
+            # 本日の対象国のポイントデータを抽出
+            df_today_master = df_master[df_master['国名'].isin(today_countries)].copy()
+            df_today_player = pd.merge(df_odds, df_today_master[['国名', 'ポイント']], on='国名', how='inner')
+            
+            if not df_today_player.empty:
+                # 参加者ごとに、本日対象国の総ポイントを合計
+                today_ranking = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
+                today_ranking = today_ranking.sort_values(by='ポイント', ascending=False).reset_index(drop=True)
+                
+                top_player = today_ranking.iloc[0]['参加者']
+                top_pt = today_ranking.iloc[0]['ポイント']
+                # タイトルを「本日のポイント勝ち頭」に自動書き換え
+                calculated_header = f"👑 本日のポイント勝ち頭: {top_player} さん (+{top_pt:.1f} pt)"
+
+        st.subheader(calculated_header)
         if settings and settings['my_comment']:
-            # B列に書かれたすべてのコメントをグリーンの枠に改行付きで表示
             st.success(settings['my_comment'].replace('\n', '  \n'))
         else:
-            st.success("ここに管理人からの熱い戦況コメントや、本日の勝ち頭への煽りが表示されます！")
+            st.success("ここに管理人からのコメントが表示されます。")
             
     st.write("---")
 
