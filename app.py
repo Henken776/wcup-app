@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 st.set_page_config(page_title="W杯サッカーくじ集計システム", layout="wide")
 
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【日付バグ修正 ＆ 表記カスタマイズ版】
+# 【日付の自動認識バグを完全に修正したバージョン】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -40,7 +41,6 @@ def load_data():
         # 3. 設定データの読み込みと2日分の解析
         settings = {'results_raw': '', 'my_comment': ''}
         day_data = {} # 日付ごとの国リスト
-        date_list = [] # 登場した日付のリスト（重複なし・登場順）
         
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
@@ -57,7 +57,6 @@ def load_data():
                         
                         if dt not in day_data:
                             day_data[dt] = []
-                            date_list.append(dt)
                         if c_name not in day_data[dt]:
                             day_data[dt].append(c_name)
                 
@@ -70,7 +69,17 @@ def load_data():
         except Exception as e:
             st.error(f"設定シートの読み込みエラー: {e}")
             
-        return df_master, df_odds, settings, day_data, date_list
+        # 日付文字列を正しく「月/日」の数値ベースでソートして正確な並びを保証する
+        def parse_date_key(date_str):
+            try:
+                m, d = map(int, date_str.split('/'))
+                return (m, d)
+            except:
+                return (0, 0)
+                
+        sorted_dates = sorted(list(day_data.keys()), key=parse_date_key)
+            
+        return df_master, df_odds, settings, day_data, sorted_dates
     except Exception as e:
         st.error(f"データの読み込みに失敗しました: {e}")
         return None, None, None, None, None
@@ -110,11 +119,10 @@ else:
         st.subheader("📅 今日の勝ち頭（2日分）")
         
         if date_list:
-            # 登録されている日付の最後から2日分を取得（例: ['6/18', '6/19']）
+            # ソート済みのリストから最新の2日分を正しく取得
             latest_dates = date_list[-2:]
-            
-            # 【バグ修正】新しい日付（リストの末尾）が上（インデックス0）にくるように正しく並び替える
-            latest_dates = sorted(latest_dates, key=lambda x: [int(i) for i in x.split('/')], reverse=True)
+            # 画面上は新しい日付（本日分）を上にしたいので逆順にする
+            latest_dates.reverse()
             
             for idx, dt in enumerate(latest_dates):
                 summary_text = get_day_summary(dt, day_data[dt], df_odds, df_master)
@@ -136,11 +144,11 @@ else:
     st.write("---")
 
     # ==========================================
-    # 1. 参加者ランキング（動的な日付ヘッダー列に対応）
+    # 1. 参加者ランキング（最新日付と連動）
     # ==========================================
     st.header("📊 参加者ランキング")
     if not df_odds.empty and len(df_odds) > 0:
-        # 最新の日付を取得
+        # 正しくソートされたdate_listの一番最後（＝絶対に一番新しい日付）を取得
         latest_date_str = date_list[-1] if date_list else "当日"
         today_col_name = f"{latest_date_str} ポイント"  # 例: "6/19 ポイント"
         
@@ -150,7 +158,7 @@ else:
         ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
         ranking_df.columns = ['参加者', '総ポイント']
         
-        # 最新日のポイント計算
+        # 最新日（一番新しい日付）のポイントのみを正確に計算
         df_today_points = pd.DataFrame(columns=['参加者', today_col_name])
         if date_list:
             latest_date = date_list[-1]
@@ -176,23 +184,4 @@ else:
         
         ranking_df = ranking_df[['参加者', '総ポイント', today_col_name, '収支ポイント']]
         
-        st.dataframe(ranking_df, use_container_width=True)
-        st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt）")
-    else:
-        st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
-
-    # 2. 各国の詳細データ一覧
-    st.header("⚽ 全48カ国 ステータス一覧")
-    if not df_odds.empty:
-        df_owners = df_odds.groupby('国名')['参加者'].apply(lambda x: ', '.join(x)).reset_index()
-        df_owners.columns = ['国名', 'オッズした人']
-        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
-    else:
-        df_final_show = df_master.copy()
-        df_final_show['オッズした人'] = '—（未選択）'
-        
-    df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
-    
-    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '勝ち点']]
-    show_df['ポイント'] = show_df['ポイント'].round(1)
-    st.dataframe(show_df.sort_values(by=['グループ', '国名']), use_container_width=True, hide_index=True)
+        st.dataframe(
