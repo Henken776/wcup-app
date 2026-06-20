@@ -7,7 +7,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 各シートのID（固定化しました）
+# 各シートのID（固定）
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841"     # 3番目のシート（オッズ）
@@ -160,4 +160,6 @@ else:
         if date_list:
             latest_date = date_list[-1]
             df_today_master = df_master[df_master['国名'].isin(day_data[latest_date])].copy()
-            df_today_player = pd.merge(df_odds, df_today
+            df_today_player = pd.merge(df_odds, df_today_master[['国名', 'ポイント']], on='国名', how='inner')
+            if not df_today_player.empty:
+                df_today_points = df_today_player
