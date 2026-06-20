@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【当日ポイント勝ち頭完全対応版】
+# 【ランキングに当日ポイント追加版】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -101,22 +101,21 @@ else:
             st.info("本日の対象国はまだ登録されていません。")
             
     with col_my:
-        # 当日の対象国データから「本日最もポイントを稼いだ人」を算出
         calculated_header = "🏆 今日の勝ち頭（不定期更新）"
+        df_today_points_summary = pd.DataFrame(columns=['参加者', '当日ポイント'])
         
         if today_countries and not df_odds.empty:
-            # 本日の対象国のポイントデータを抽出
             df_today_master = df_master[df_master['国名'].isin(today_countries)].copy()
             df_today_player = pd.merge(df_odds, df_today_master[['国名', 'ポイント']], on='国名', how='inner')
             
             if not df_today_player.empty:
-                # 参加者ごとに、本日対象国の総ポイントを合計
-                today_ranking = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
-                today_ranking = today_ranking.sort_values(by='ポイント', ascending=False).reset_index(drop=True)
+                df_today_points_summary = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
+                df_today_points_summary.columns = ['参加者', '当日ポイント']
                 
-                top_player = today_ranking.iloc[0]['参加者']
-                top_pt = today_ranking.iloc[0]['ポイント']
-                # タイトルを「本日のポイント勝ち頭」に自動書き換え
+                # 勝ち頭の選出
+                today_ranking_sorted = df_today_points_summary.sort_values(by='当日ポイント', ascending=False).reset_index(drop=True)
+                top_player = today_ranking_sorted.iloc[0]['参加者']
+                top_pt = today_ranking_sorted.iloc[0]['当日ポイント']
                 calculated_header = f"👑 本日のポイント勝ち頭: {top_player} さん (+{top_pt:.1f} pt)"
 
         st.subheader(calculated_header)
@@ -127,21 +126,39 @@ else:
             
     st.write("---")
 
-    # 1. 参加者ランキング
+    # ==========================================
+    # 1. 参加者ランキング（当日ポイント列を追加）
+    # ==========================================
     st.header("📊 参加者ランキング")
     if not df_odds.empty and len(df_odds) > 0:
+        # トータルポイントの計算
         df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
         df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0)
         
         ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
         ranking_df.columns = ['参加者', '総ポイント']
         
+        # 当日ポイントのドッキング（今日ポイントがなかった人は0点にする）
+        if not df_today_points_summary.empty:
+            ranking_df = pd.merge(ranking_df, df_today_points_summary, on='参加者', how='left')
+            ranking_df['当日ポイント'] = ranking_df['当日ポイント'].fillna(0)
+        else:
+            ranking_df['当日ポイント'] = 0.0
+        
+        # 収支ポイント（総ポイント - 平均ポイント）の計算
         average_point = ranking_df['総ポイント'].mean()
         ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
+        
+        # 総ポイント順に並び替え
         ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
         
+        # 見やすさのために数値を丸める
         ranking_df['総ポイント'] = ranking_df['総ポイント'].round(1)
+        ranking_df['当日ポイント'] = ranking_df['当日ポイント'].round(1)
         ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
+        
+        # 列の順番をきれいに並び替え
+        ranking_df = ranking_df[['参加者', '総ポイント', '当日ポイント', '収支ポイント']]
         
         st.dataframe(ranking_df, use_container_width=True)
         st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt）")
