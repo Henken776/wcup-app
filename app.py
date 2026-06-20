@@ -6,7 +6,7 @@ st.set_page_config(page_title="W杯サッカーくじ集計システム", layout
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 【2日分バックナンバー表示対応版】
+# 【日付バグ修正 ＆ 表記カスタマイズ版】
 URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841" # 3番目のシート（オッズ）
@@ -39,8 +39,8 @@ def load_data():
             
         # 3. 設定データの読み込みと2日分の解析
         settings = {'results_raw': '', 'my_comment': ''}
-        day_data = {} # 日付ごとの国リストを入れる辞書
-        date_list = [] # 登場した日付の順序を記録
+        day_data = {} # 日付ごとの国リスト
+        date_list = [] # 登場した日付のリスト（重複なし・登場順）
         
         try:
             sett_df = pd.read_csv(URL_SETTINGS)
@@ -77,7 +77,7 @@ def load_data():
 
 df_master, df_odds, settings, day_data, date_list = load_data()
 
-# 特定の日の勝ち頭と対象国テキストを計算するヘルパー関数
+# 特定の日の勝ち頭と獲得国テキストを計算するヘルパー関数
 def get_day_summary(dt, countries, df_odds, df_master):
     countries_str = "、".join(countries)
     winner_str = "該当なし"
@@ -93,7 +93,7 @@ def get_day_summary(dt, countries, df_odds, df_master):
             top_pt = day_ranking.iloc[0]['ポイント']
             winner_str = f"🏆 {top_player} さん (+{top_pt:.1f} pt)"
             
-    return f"**【対象国】** {countries_str}  \n**【勝ち頭】** {winner_str}"
+    return f"**【ポイント獲得国】** {countries_str}  \n**【勝ち頭】** {winner_str}"
 
 if df_master is None or df_master.empty:
     st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
@@ -102,25 +102,25 @@ else:
     st.write("---")
     
     # ==========================================
-    # 📢 【新設】2日分バックナンバー ＆ 管理人コメントエリア
+    # 📢 📅 今日の勝ち頭（2日分） ＆ 管理人コメントエリア
     # ==========================================
     col_history, col_my = st.columns(2)
     
     with col_history:
-        st.subheader("📅 直近2日間の動き（時差対策版）")
+        st.subheader("📅 今日の勝ち頭（2日分）")
         
         if date_list:
-            # 最新の2日分を取得（リストの最後から2つ）
+            # 登録されている日付の最後から2日分を取得（例: ['6/18', '6/19']）
             latest_dates = date_list[-2:]
-            # 新しい日付が上に来るように逆順にする
-            latest_dates.reverse()
+            
+            # 【バグ修正】新しい日付（リストの末尾）が上（インデックス0）にくるように正しく並び替える
+            latest_dates = sorted(latest_dates, key=lambda x: [int(i) for i in x.split('/')], reverse=True)
             
             for idx, dt in enumerate(latest_dates):
                 summary_text = get_day_summary(dt, day_data[dt], df_odds, df_master)
                 if idx == 0:
                     st.info(f"🟢 **本日分 ({dt})** \n{summary_text}")
                 else:
-                    st.image = None # ダミー
                     st.write(f"⚪ **昨日分 ({dt})** \n{summary_text}")
                     st.write("---")
         else:
@@ -135,43 +135,49 @@ else:
             
     st.write("---")
 
-    # 1. 参加者ランキング
+    # ==========================================
+    # 1. 参加者ランキング（動的な日付ヘッダー列に対応）
+    # ==========================================
     st.header("📊 参加者ランキング")
     if not df_odds.empty and len(df_odds) > 0:
+        # 最新の日付を取得
+        latest_date_str = date_list[-1] if date_list else "当日"
+        today_col_name = f"{latest_date_str} ポイント"  # 例: "6/19 ポイント"
+        
         df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
         df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0)
         
         ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
         ranking_df.columns = ['参加者', '総ポイント']
         
-        # ランキング表用の「当日（最新日付）」のポイント計算
-        df_today_points = pd.DataFrame(columns=['参加者', '当日ポイント'])
+        # 最新日のポイント計算
+        df_today_points = pd.DataFrame(columns=['参加者', today_col_name])
         if date_list:
             latest_date = date_list[-1]
             df_today_master = df_master[df_master['国名'].isin(day_data[latest_date])].copy()
             df_today_player = pd.merge(df_odds, df_today_master[['国名', 'ポイント']], on='国名', how='inner')
             if not df_today_player.empty:
                 df_today_points = df_today_player.groupby('参加者')['ポイント'].sum().reset_index()
-                df_today_points.columns = ['参加者', '当日ポイント']
+                df_today_points.columns = ['参加者', today_col_name]
 
         if not df_today_points.empty:
             ranking_df = pd.merge(ranking_df, df_today_points, on='参加者', how='left')
-            ranking_df['当日ポイント'] = ranking_df['当日ポイント'].fillna(0)
+            ranking_df[today_col_name] = ranking_df[today_col_name].fillna(0)
         else:
-            ranking_df['当日ポイント'] = 0.0
+            ranking_df[today_col_name] = 0.0
         
         average_point = ranking_df['総ポイント'].mean()
         ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
         ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
         
         ranking_df['総ポイント'] = ranking_df['総ポイント'].round(1)
-        ranking_df['当日ポイント'] = ranking_df['当日ポイント'].round(1)
+        ranking_df[today_col_name] = ranking_df[today_col_name].round(1)
         ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
         
-        ranking_df = ranking_df[['参加者', '総ポイント', '当日ポイント', '収支ポイント']]
+        ranking_df = ranking_df[['参加者', '総ポイント', today_col_name, '収支ポイント']]
         
         st.dataframe(ranking_df, use_container_width=True)
-        st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt。なお「当日ポイント」は最新の【 {date_list[-1] if date_list else '—'} 】の数値を反映しています）")
+        st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt）")
     else:
         st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
 
