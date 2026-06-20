@@ -131,4 +131,7 @@ else:
                     st.write(f"⚪ **昨日分 ({dt})** \n{summary_text}")
                     st.write("---")
         else:
-            st.info("試合結果（日付, 国名）が登録されると、ここに2日分の履歴が自動
+            st.info("結果が登録されると、ここに2日分の履歴が自動表示されます。")
+            
+    with col_my:
+        st.subheader("💬 管理人コメント欄（不定期更新）")
