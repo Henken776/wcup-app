@@ -131,35 +131,4 @@ else:
                     st.write(f"⚪ **昨日分 ({dt})** \n{summary_text}")
                     st.write("---")
         else:
-            st.info("試合結果（日付, 国名）が登録されると、ここに2日分の履歴が自動表示されます。")
-            
-    with col_my:
-        st.subheader("💬 管理人コメント欄（不定期更新）")
-        if settings and settings['my_comment']:
-            st.success(settings['my_comment'].replace('\n', '  \n'))
-        else:
-            st.success("ここに管理人からのコメントが表示されます。")
-            
-    st.write("---")
-
-    # ==========================================
-    # 1. 参加者ランキング（最新日付と100%連動）
-    # ==========================================
-    st.header("📊 参加者ランキング")
-    if not df_odds.empty and len(df_odds) > 0:
-        latest_date_str = date_list[-1] if date_list else "当日"
-        today_col_name = f"{latest_date_str} ポイント"
-        
-        df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
-        df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0)
-        
-        ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
-        ranking_df.columns = ['参加者', '総ポイント']
-        
-        df_today_points = pd.DataFrame(columns=['参加者', today_col_name])
-        if date_list:
-            latest_date = date_list[-1]
-            df_today_master = df_master[df_master['国名'].isin(day_data[latest_date])].copy()
-            df_today_player = pd.merge(df_odds, df_today_master[['国名', 'ポイント']], on='国名', how='inner')
-            if not df_today_player.empty:
-                df_today_points = df_today_player
+            st.info("試合結果（日付, 国名）が登録されると、ここに2日分の履歴が自動
