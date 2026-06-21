@@ -86,7 +86,7 @@ def load_data():
 
 df_master, df_odds, settings, day_data, date_list = load_data()
 
-# 特定の日の勝ち頭と獲得国テキストを計算するヘルパー関数
+# 特定の日の勝ち頭と獲得国テキストを計算するヘルパー関数（同点対応版）
 def get_day_summary(dt, countries, df_odds, df_master):
     countries_str = "、".join(countries)
     winner_str = "該当なし"
@@ -97,10 +97,21 @@ def get_day_summary(dt, countries, df_odds, df_master):
         
         if not df_day_player.empty:
             day_ranking = df_day_player.groupby('参加者')['ポイント'].sum().reset_index()
-            day_ranking = day_ranking.sort_values(by='ポイント', ascending=False).reset_index(drop=True)
-            top_player = day_ranking.iloc[0]['参加者']
-            top_pt = day_ranking.iloc[0]['ポイント']
-            winner_str = f"🏆 {top_player} さん (+{top_pt:.1f} pt)"
+            max_pt = day_ranking['ポイント'].max()
+            
+            # 最高ポイントと同じポイントを持つ参加者を全員抽出
+            top_players_df = day_ranking[day_ranking['ポイント'] == max_pt]
+            top_players_list = top_players_df['参加者'].tolist()
+            
+            # 1人目には🏆マーク、2人目以降には👥マークをつけて結合
+            formatted_players = []
+            for i, player in enumerate(top_players_list):
+                if i == 0:
+                    formatted_players.append(f"🏆 {player} さん")
+                else:
+                    formatted_players.append(f"👥 {player} さん")
+                    
+            winner_str = "、".join(formatted_players) + f" (+{max_pt:.1f} pt)"
             
     return f"**【ポイント獲得国】** {countries_str}  \n**【勝ち頭】** {winner_str}"
 
