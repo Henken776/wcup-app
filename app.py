@@ -86,58 +86,31 @@ def load_data():
 
 df_master, df_odds, settings, day_data, date_list = load_data()
 
-# 全日程を通じて、各国のポイントが「その日に実際に何ポイント増えたか」をマスタの時系列変化から逆算する関数
-def calculate_true_daily_points(date_list, day_data, df_master):
-    # 各国の最新の累積勝ち数・分け数・オッズを辞書化
-    current_win = dict(zip(df_master['国名'], df_master['勝ち数']))
-    current_draw = dict(zip(df_master['国名'], df_master['分け数']))
-    odds_map = dict(zip(df_master['国名'], df_master['オッズ']))
-    
-    # 逆算用：最新の状態から過去に向かって引いていくためのワーク辞書
-    working_win = current_win.copy()
-    working_draw = current_draw.copy()
-    
-    daily_maps = {} # { 日付: { 国名: その日のポイント } }
-    
-    # 日付を「最新の未来」から「過去」に向かって逆順でループ処理
-    reversed_dates = list(date_list)
-    reversed_dates.reverse()
-    
-    for dt in reversed_dates:
-        daily_maps[dt] = {}
-        countries_on_day = day_data.get(dt, [])
+# 各国のマスタ情報から「1試合あたりのポイント」を安全に割り出す関数（ループ処理なし）
+def get_country_daily_point(c_name, df_master):
+    try:
+        match_rows = df_master[df_master['国名'] == c_name]
+        if match_rows.empty:
+            return 0.0
+        row = match_rows.iloc[0]
         
-        # その日に設定シートに書かれている国をチェック
-        for c in countries_on_day:
-            if c not in working_win:
-                continue
-            
-            # 該当国の現在の勝敗数を確認
-            w = working_win[c]
-            d = working_draw[c]
-            
-            # 1試合前の状態をシミュレート（基本は勝ちを優先的に引いて、無ければ分けを引く）
-            if w > 0:
-                # 勝ち（勝ち点3）だったと仮定
-                daily_maps[dt][c] = 3.0 * odds_map[c]
-                working_win[c] = max(0, w - 1)
-            elif d > 0:
-                # 引き分け（勝ち点1）だったと仮定
-                daily_maps[dt][c] = 1.0 * odds_map[c]
-                working_draw[c] = max(0, d - 1)
-            else:
-                # 万が一どちらも0ならデフォルトで3
-                daily_maps[dt][c] = 3.0 * odds_map[c]
-                
-    return daily_maps
+        # 引き分け数が1以上あり、勝ち数が0、または引き分けの割合が明らかに高い場合は引き分け(1点×オッズ)とする
+        if row['分け数'] > 0 and row['勝ち数'] == 0:
+            return 1.0 * row['オッズ']
+        
+        # それ以外は基本「勝ち(3点×オッズ)」として計算する
+        return 3.0 * row['オッズ']
+    except:
+        return 0.0
 
 # 特定の日の勝ち頭と獲得国テキストを計算するヘルパー関数
-def get_day_summary(dt, countries, df_odds, df_master, daily_pts_map):
+def get_day_summary(dt, countries, df_odds, df_master):
     countries_str = "、".join(countries)
     winner_str = "該当なし"
     
     if countries and not df_odds.empty:
-        day_pts_dict = daily_pts_map.get(dt, {})
+        # この日の各国の単体ポイントを計算して辞書化
+        day_pts_dict = {c: get_country_daily_point(c, df_master) for c in countries}
         
         player_day_pts = {}
         for _, row in df_odds.iterrows():
@@ -150,4 +123,90 @@ def get_day_summary(dt, countries, df_odds, df_master, daily_pts_map):
             max_pt = max(player_day_pts.values())
             top_players = [p for p, pt in player_day_pts.items() if pt == max_pt]
             
-            formatted_
+            formatted_players = []
+            for i, player in enumerate(top_players):
+                if i == 0:
+                    formatted_players.append(f"🏆 {player} さん")
+                else:
+                    formatted_players.append(f"👥 {player} さん")
+                    
+            winner_str = "、".join(formatted_players) + f" (+{max_pt:.1f} pt)"
+            
+    return f"**【ポイント獲得国】** {countries_str}  \n**【勝ち頭】** {winner_str}"
+
+if df_master is None or df_master.empty:
+    st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
+else:
+    st.title("🏆 W杯サッカーくじ集計システム")
+    st.write("---")
+    
+    # ==========================================
+    # 📢 今日の勝ち頭（2日分） ＆ 管理人コメントエリア
+    # ==========================================
+    col_history, col_my = st.columns(2)
+    
+    with col_history:
+        st.subheader("📅 今日の勝ち頭（2日分）")
+        
+        if date_list:
+            latest_dates = date_list[-2:]
+            latest_dates.reverse()
+            
+            for idx, dt in enumerate(latest_dates):
+                summary_text = get_day_summary(dt, day_data[dt], df_odds, df_master)
+                if idx == 0:
+                    st.info(f"🟢 **本日分 ({dt})** \n{summary_text}")
+                else:
+                    st.write(f"⚪ **昨日分 ({dt})** \n{summary_text}")
+                    st.write("---")
+        else:
+            st.info("結果が登録されると、ここに2日分の履歴が自動表示されます。")
+            
+    with col_my:
+        st.subheader("💬 管理人コメント欄（不定期更新）")
+        if settings and settings['my_comment']:
+            st.success(settings['my_comment'].replace('\n', '  \n'))
+        else:
+            st.success("ここに管理人からのコメントが表示されます。")
+            
+    st.write("---")
+
+    # ==========================================
+    # 1. 参加者ランキング（最新日付と100%連動）
+    # ==========================================
+    st.header("📊 参加者ランキング")
+    if not df_odds.empty and len(df_odds) > 0:
+        latest_date_str = date_list[-1] if date_list else "当日"
+        today_col_name = f"{latest_date_str} ポイント"
+        
+        df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
+        df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0)
+        
+        ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
+        ranking_df.columns = ['参加者', '総ポイント']
+        
+        df_today_points = pd.DataFrame(columns=['参加者', today_col_name])
+        if date_list:
+            latest_date = date_list[-1]
+            countries_today = day_data.get(latest_date, [])
+            latest_day_map = {c: get_country_daily_point(c, df_master) for c in countries_today}
+            
+            player_today_list = []
+            for _, row in df_odds.iterrows():
+                player = row['参加者']
+                c_name = row['国名']
+                if c_name in latest_day_map:
+                    player_today_list.append({'参加者': player, '当日点': latest_day_map[c_name]})
+            
+            if player_today_list:
+                df_temp = pd.DataFrame(player_today_list)
+                df_today_points = df_temp.groupby('参加者')['当日点'].sum().reset_index()
+                df_today_points.columns = ['参加者', today_col_name]
+
+        if not df_today_points.empty:
+            ranking_df = pd.merge(ranking_df, df_today_points, on='参加者', how='left')
+            ranking_df[today_col_name] = ranking_df[today_col_name].fillna(0)
+        else:
+            ranking_df[today_col_name] = 0.0
+        
+        average_point = ranking_df['総ポイント'].
