@@ -77,21 +77,23 @@ def get_daily_points_dict(dt, df_master_data):
     for _, row in day_countries.iterrows():
         w_count = row['勝ち数']
         d_count = row['分け数']
-        l_count = row['負け数']
         
-        # マスタの「負け数」が増えた（直近の試合で負けた）国、
-        # または勝ち数・分け数がともに0の国は、当日の獲得ポイントを0点（不的中）とする
+        # 勝ちも引き分けもゼロ（負けた国）はポイントなし
         if w_count == 0 and d_count == 0:
             continue
             
-        # 勝ち数が0で分け数がある場合は引き分け(1点)、それ以外は勝ち(3点)ベース
-        if d_count > 0 and w_count == 0:
+        # 【修正ポイント】1試合あたりの平均勝ち点をベースに判定
+        total_games = w_count + d_count
+        avg_game_pt = (w_count * 3 + d_count * 1) / total_games if total_games > 0 else 3.0
+        
+        # 平均勝ち点が3点未満（引き分けが含まれている）かつ、直近で引き分け数が増えたとみなせる場合は 1点 ベースにする
+        # 全勝（平均3点）ではない国が、当日ポイントを獲得している＝直近が引き分けである確率に基づく安全な判定
+        if avg_game_pt < 3.0 and d_count > 0:
+            # 過去に勝ちがあっても、直近で引き分けた場合は1点として計算
             match_pt = 1.0
         else:
             match_pt = 3.0
             
-        # ただし、スプレッドシート上で「当日負けた国」を簡易的に弾くため、
-        # 勝ち点ベースでポイントが発生している国のみを対象にする
         pts_dict[row['国名']] = match_pt * row['オッズ']
         
     return pts_dict
@@ -101,11 +103,9 @@ def get_day_summary(dt, df_odds_data, df_master_data):
     winner_str = "該当なし"
     hit_countries_str = "なし"
     
-    # 1. その日に「ポイント（勝ち点）を獲得した国」の辞書を取得
     day_pts_dict = get_daily_points_dict(dt, df_master_data)
     
     if day_pts_dict and not df_odds_data.empty:
-        # 2. 参加者ごとの当日合計点を計算
         player_day_pts = {}
         for _, row in df_odds_data.iterrows():
             player = row['参加者']
@@ -114,7 +114,6 @@ def get_day_summary(dt, df_odds_data, df_master_data):
                 player_day_pts[player] = player_day_pts.get(player, 0.0) + day_pts_dict[c_name]
                 
         if player_day_pts:
-            # 3. 勝ち頭（最高点）を特定
             max_pt = max(player_day_pts.values())
             top_players = [p for p, pt in player_day_pts.items() if pt == max_pt]
             
@@ -126,12 +125,9 @@ def get_day_summary(dt, df_odds_data, df_master_data):
                     formatted_players.append(f"👥 {player} さん")
             winner_str = "、".join(formatted_players) + f" (+{max_pt:.1f} pt)"
             
-            # 4. 【ここを修正】勝ち頭の人がオッズしていて、かつ実際にポイントを得た国だけを抽出
-            # 複数の勝ち頭がいる場合は、最初の勝ち頭（または全員分）のオッズ国から的中したものを集計
             leader = top_players[0]
             leader_odds_countries = df_odds_data[df_odds_data['参加者'] == leader]['国名'].tolist()
             
-            # 勝ち頭がオッズしている国のうち、当日にポイントが発生した国
             leader_hit_countries = [c for c in leader_odds_countries if c in day_pts_dict]
             if leader_hit_countries:
                 hit_countries_str = "、".join(leader_hit_countries)
@@ -234,7 +230,7 @@ else:
     if not df_odds.empty:
         df_owners = df_odds.groupby('国名')['参加者'].apply(lambda x: ', '.join(x)).reset_index()
         df_owners.columns = ['国名', 'オッズした人']
-        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
+        df_final_show = pd.merge(df_master, df_owners, on='国name', how='left', left_on='国名', right_on='国名')
     else:
         df_final_show = df_master.copy()
         df_final_show['オッズした人'] = '—（未選択）'
