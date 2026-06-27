@@ -26,7 +26,12 @@ def load_data():
         df_master['分け数'] = df_master['分け数'].fillna(0).astype(int)
         df_master['負け数'] = df_master['負け数'].fillna(0).astype(int)
         df_master['オッズ'] = df_master['オッズ'].fillna(1.0).astype(float)
-        df_master['日付'] = df_master['日付'].fillna('').astype(str).str.strip()
+        
+        # 日付パース処理（d, D, 分 などの引き分け記号を綺麗にクレンジング）
+        df_master['生日付'] = df_master['日付'].fillna('').astype(str).str.strip()
+        df_master['表示日付'] = df_master['生日付'].apply(
+            lambda x: x.upper().replace('D', '').replace('分', '').replace('△', '').strip()
+        )
         
         df_master['勝ち点'] = df_master['勝ち数'] * 3 + df_master['分け数'] * 1
         df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']
@@ -51,7 +56,7 @@ def load_data():
         except:
             pass
             
-        unique_dates = [d for d in df_master['日付'].unique() if d != '']
+        unique_dates = [d for d in df_master['表示日付'].unique() if d != '']
         
         def parse_date_key(date_str):
             try:
@@ -71,25 +76,15 @@ df_master, df_odds, settings, date_list = load_data()
 
 # 特定の日の「その日単体」の獲得ポイントマップを計算する関数
 def get_daily_points_dict(dt, df_master_data):
-    day_countries = df_master_data[df_master_data['日付'] == dt]
+    # dt は '6/26' などの綺麗な日付
+    day_countries = df_master_data[df_master_data['表示日付'] == dt]
     pts_dict = {}
     
     for _, row in day_countries.iterrows():
-        w_count = row['勝ち数']
-        d_count = row['分け数']
+        raw_date_upper = row['生日付'].upper()
         
-        # 勝ちも引き分けもゼロ（負けた国）はポイントなし
-        if w_count == 0 and d_count == 0:
-            continue
-            
-        # 【修正ポイント】1試合あたりの平均勝ち点をベースに判定
-        total_games = w_count + d_count
-        avg_game_pt = (w_count * 3 + d_count * 1) / total_games if total_games > 0 else 3.0
-        
-        # 平均勝ち点が3点未満（引き分けが含まれている）かつ、直近で引き分け数が増えたとみなせる場合は 1点 ベースにする
-        # 全勝（平均3点）ではない国が、当日ポイントを獲得している＝直近が引き分けである確率に基づく安全な判定
-        if avg_game_pt < 3.0 and d_count > 0:
-            # 過去に勝ちがあっても、直近で引き分けた場合は1点として計算
+        # 日付の後ろに「D」「d」「分」「△」がついていたら引き分け（1点）、それ以外は勝ち（3点）
+        if 'D' in raw_date_upper or '分' in raw_date_upper or '△' in raw_date_upper:
             match_pt = 1.0
         else:
             match_pt = 3.0
@@ -230,7 +225,7 @@ else:
     if not df_odds.empty:
         df_owners = df_odds.groupby('国名')['参加者'].apply(lambda x: ', '.join(x)).reset_index()
         df_owners.columns = ['国名', 'オッズした人']
-        df_final_show = pd.merge(df_master, df_owners, on='国name', how='left', left_on='国名', right_on='国名')
+        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
     else:
         df_final_show = df_master.copy()
         df_final_show['オッズした人'] = '—（未選択）'
