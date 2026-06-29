@@ -22,10 +22,11 @@ def load_data():
                 st.error(f"「シート1」に '{col}' の列が見つかりません。")
                 return None, None, None, None
         
+        # すべて整数（int）として確実にキャスト
         df_master['勝ち数'] = df_master['勝ち数'].fillna(0).astype(int)
         df_master['分け数'] = df_master['分け数'].fillna(0).astype(int)
         df_master['負け数'] = df_master['負け数'].fillna(0).astype(int)
-        df_master['オッズ'] = df_master['オッズ'].fillna(1).astype(int)  # オッズを整数に変換
+        df_master['オッズ'] = df_master['オッズ'].fillna(1).astype(int)
         
         # 日付・敗退判定のパース処理
         df_master['生日付'] = df_master['日付'].fillna('').astype(str).str.strip()
@@ -43,7 +44,8 @@ def load_data():
         df_master.loc[df_master['is_eliminated'], '表示日付'] = ''
         
         df_master['勝ち点'] = df_master['勝ち数'] * 3 + df_master['分け数'] * 1
-        df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']  # ポイントも自動で整数になる
+        df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']
+        df_master['ポイント'] = df_master['ポイント'].astype(int)
         
         # 2. 参加者のオッズデータを読み込み
         try:
@@ -174,7 +176,7 @@ else:
     st.write("---")
 
     # ==========================================
-    # 1. 参加者ランキング（最新日付と100%連動）
+    # 1. 参加者ランキング
     # ==========================================
     st.header("📊 参加者ランキング")
     if not df_odds.empty and len(df_odds) > 0:
@@ -209,5 +211,52 @@ else:
             ranking_df[today_col_name] = ranking_df[today_col_name].fillna(0).astype(int)
         else:
             ranking_df[today_col_name] = 0
+            
+        ranking_df['総ポイント'] = ranking_df['総ポイント'].astype(int)
+        ranking_df[today_col_name] = ranking_df[today_col_name].astype(int)
         
-        average_point
+        average_point = ranking_df['総ポイント'].mean()
+        ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
+        ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
+        
+        ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
+        ranking_df = ranking_df[['参加者', '総ポイント', today_col_name, '収支ポイント']]
+        
+        st.dataframe(ranking_df, use_container_width=True)
+        st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt）")
+    else:
+        st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
+
+    # ==========================================
+    # 2. 各国の詳細 data 一覧
+    # ==========================================
+    st.header("⚽ 全48カ国 ステータス一覧")
+    if not df_odds.empty:
+        df_owners = df_odds.groupby('国名')['参加者'].apply(lambda x: ', '.join(x)).reset_index()
+        df_owners.columns = ['国名', 'オッズした人']
+        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
+    else:
+        df_final_show = df_master.copy()
+        df_final_show['オッズした人'] = '—（未選択）'
+        
+    df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
+    
+    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点', 'is_eliminated']]
+    
+    # 昇順ソート
+    show_df = show_df.sort_values(by=['グループ', '国名']).reset_index(drop=True)
+
+    # 日付欄に「×」が入っている行をグレーアウトするスタイリング関数
+    def style_eliminated_countries(row):
+        if row['is_eliminated']:
+            return ['background-color: #f0f2f6; color: #a3a8b4;'] * len(row)
+        return [''] * len(row)
+
+    styled_df = show_df.style.apply(style_eliminated_countries, axis=1)
+    
+    st.dataframe(
+        styled_df, 
+        use_container_width=True, 
+        hide_index=True,
+        column_order=['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点']
+    )
