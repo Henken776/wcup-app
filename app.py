@@ -51,9 +51,20 @@ def load_data():
         try:
             df_odds = pd.read_csv(URL_ODDS)
             df_odds['参加者'] = df_odds['参加者'].fillna('未選択').astype(str).str.strip()
-            df_odds['国名'] = df_odds['国名'].astype(str).str.strip()
+            df_odds['国名'] = df_odds['国名'].fillna('').astype(str).str.strip()
+            df_odds = df_odds[df_odds['国名'] != ''].reset_index(drop=True)
         except:
             df_odds = pd.DataFrame(columns=['参加者', '国名'])
+            
+        # マスタデータをクイック参照するための辞書を作成
+        master_dict = {}
+        for _, row in df_master.iterrows():
+            c_name = str(row['国名']).strip()
+            if c_name:
+                master_dict[c_name] = {
+                    'ポイント': int(row['ポイント']),
+                    'is_eliminated': row['is_eliminated']
+                }
             
         # 3. 設定データの読み込み
         settings = {'my_comment': ''}
@@ -78,12 +89,12 @@ def load_data():
                 
         date_list = sorted(unique_dates, key=parse_date_key)
             
-        return df_master, df_odds, settings, date_list
+        return df_master, df_odds, master_dict, settings, date_list
     except Exception as e:
         st.error(f"データの読み込みに失敗しました: {e}")
-        return None, None, None, None
+        return None, None, None, None, None
 
-df_master, df_odds, settings, date_list = load_data()
+df_master, df_odds, master_dict, settings, date_list = load_data()
 
 # 特定の日の「その日単体」の獲得ポイントマップを計算する関数
 def get_daily_points_dict(dt, df_master_data):
@@ -183,39 +194,26 @@ else:
         latest_date_str = date_list[-1] if date_list else "当日"
         today_col_name = f"{latest_date_str} ポイント"
         
-        df_player_points = pd.merge(df_odds, df_master[['国名', 'ポイント']], on='国名', how='left')
-        df_player_points['ポイント'] = df_player_points['ポイント'].fillna(0).astype(int)
+        # 安全な集計処理（mergeを使わず、構築した辞書からポイントを計算）
+        ranking_rows = []
+        player_groups = df_odds.groupby('参加者')
         
-        ranking_df = df_player_points.groupby('参加者')['ポイント'].sum().reset_index()
-        ranking_df.columns = ['参加者', '総ポイント']
+        latest_day_map = get_daily_points_dict(date_list[-1], df_master) if date_list else {}
         
-        df_today_points = pd.DataFrame(columns=['参加者', today_col_name])
-        if date_list:
-            latest_date = date_list[-1]
-            latest_day_map = get_daily_points_dict(latest_date, df_master)
-            
-            player_today_list = []
-            for _, row in df_odds.iterrows():
-                player = row['参加者']
-                c_name = row['国名']
+        for player, group in player_groups:
+            total_pt = 0
+            today_pt = 0
+            for c_name in group['国名'].tolist():
+                if c_name in master_dict:
+                    total_pt += master_dict[c_name]['ポイント']
                 if c_name in latest_day_map:
-                    player_today_list.append({'参加者': player, '当日点': latest_day_map[c_name]})
+                    today_pt += latest_day_map[c_name]
+            ranking_rows.append({'参加者': player, '総ポイント': int(total_pt), today_col_name: int(today_pt)})
             
-            if player_today_list:
-                df_temp = pd.DataFrame(player_today_list)
-                df_today_points = df_temp.groupby('参加者')['当日点'].sum().reset_index()
-                df_today_points.columns = ['参加者', today_col_name]
-
-        if not df_today_points.empty:
-            ranking_df = pd.merge(ranking_df, df_today_points, on='参加者', how='left')
-            ranking_df[today_col_name] = ranking_df[today_col_name].fillna(0).astype(int)
-        else:
-            ranking_df[today_col_name] = 0
-            
-        ranking_df['総ポイント'] = ranking_df['総ポイント'].astype(int)
-        ranking_df[today_col_name] = ranking_df[today_col_name].astype(int)
+        ranking_df = pd.DataFrame(ranking_rows)
         
-        average_point = ranking_df['総ポイント'].mean()
+        # 平均点と収支の計算
+        average_point = ranking_df['総ポイント'].mean() if len(ranking_df) > 0 else 0
         ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
         ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
         
@@ -227,24 +225,74 @@ else:
     else:
         st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
 
+    st.write("---")
+
+    # ==========================================
+    # 📋 オッズ国ステータス一覧（新規追加・安全な横並び表示）
+    # ==========================================
+    st.header("📋 オッズ国ステータス一覧")
+    if not df_odds.empty:
+        # 縦持ちのデータを、エラーを絶対出さずに横持ち（1〜8列）へ安全に変換
+        horiz_rows = []
+        for player, group in df_odds.groupby('参加者'):
+            countries = group['国名'].tolist()[:8]  # 最大8カ国
+            # 8カ国に満たない場合は空文字列で埋める
+            while len(countries) < 8:
+                countries.append('')
+            
+            row_dict = {'参加者': player}
+            for i, c in enumerate(countries):
+                row_dict[str(i+1)] = c
+            horiz_rows.append(row_dict)
+            
+        status_display_df = pd.DataFrame(horiz_rows)
+        # 参加者の名前順などで並び替え
+        status_display_df = status_display_df.sort_values(by='参加者').reset_index(drop=True)
+        
+        # 1〜8の列を対象に、敗退した国をグレーアウト（取り消し線）にするスタイル関数
+        def style_cells(val):
+            cleaned_val = str(val).strip()
+            if cleaned_val in master_dict:
+                if master_dict[cleaned_val]['is_eliminated']:
+                    return 'background-color: #f0f2f6; color: #a3a8b4; font-weight: normal; text-decoration: line-through;'
+            return ''
+
+        styled_status_df = status_display_df.style.applymap(style_cells, subset=[str(i) for i in range(1, 9)])
+        st.dataframe(styled_status_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("オッズデータがありません。")
+
+    st.write("---")
+
     # ==========================================
     # 2. 各国の詳細 data 一覧
     # ==========================================
     st.header("⚽ 全48カ国 ステータス一覧")
-    if not df_odds.empty:
-        df_owners = df_odds.groupby('国名')['参加者'].apply(lambda x: ', '.join(x)).reset_index()
-        df_owners.columns = ['国名', 'オッズした人']
-        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
-    else:
-        df_final_show = df_master.copy()
-        df_final_show['オッズした人'] = '—（未選択）'
-        
-    df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
     
-    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点', 'is_eliminated']]
+    # 危険な pd.merge を完全に排除し、安全に各国に「オッズした人」をマッピング
+    owner_map = {}
+    for _, row in df_odds.iterrows():
+        p_name = row['参加者']
+        c_name = row['国名']
+        if c_name:
+            if c_name not in owner_map:
+                owner_map[c_name] = []
+            if p_name not in owner_map[c_name]:
+                owner_map[c_name].append(p_name)
+                
+    df_final_show = df_master.copy()
+    df_final_show['オッズした人'] = df_final_show['国名'].apply(
+        lambda x: ', '.join(owner_map[x]) if x in owner_map and owner_map[x] else '—（未選択）'
+    )
+    
+    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点', 'is_eliminated']].copy()
     
     # 昇順ソート
     show_df = show_df.sort_values(by=['グループ', '国名']).reset_index(drop=True)
+
+    # 数値列が絶対に小数にならないよう再徹底
+    for col in ['ポイント', 'オッズ', '勝ち数', '分け数', '負け数', '勝ち点']:
+        show_df[col] = show_df[col].astype(int)
 
     # 日付欄に「×」が入っている行をグレーアウトするスタイリング関数
     def style_eliminated_countries(row):
