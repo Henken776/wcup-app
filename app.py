@@ -250,4 +250,62 @@ else:
     # ==========================================
     # 📋 ⭐【イメージ完全再現】オッズ国ステータス一覧
     # ==========================================
-    st.header("📋 オ
+    st.header("📋 オッズ国ステータス一覧")
+    if not df_odds_raw.empty:
+        # スプレッドシートそのままの「参加者」「1」〜「8」の列を抽出
+        cols_to_show = ['参加者'] + [str(i) for i in range(1, 9)]
+        status_display_df = df_odds_raw[cols_to_show].copy()
+        
+        # 各マス目をチェックし、シート1で×がついている国名だけを正確にグレーアウト
+        def style_cells(val):
+            cleaned_val = str(val).strip()
+            if cleaned_val in country_info:
+                if country_info[cleaned_val]['is_eliminated']:
+                    return 'background-color: #f0f2f6; color: #a3a8b4; font-weight: bold; text-decoration: line-through;'
+            return ''
+
+        styled_status_df = status_display_df.style.applymap(
+            style_cells, 
+            subset=[str(i) for i in range(1, 9)]
+        )
+        
+        st.dataframe(
+            styled_status_df,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("オッズデータが見つかりません。")
+
+    st.write("---")
+
+    # ==========================================
+    # 2. 各国の詳細 data 一覧
+    # ==========================================
+    st.header("⚽ 全48カ国 ステータス一覧")
+    if not df_odds_melted.empty:
+        df_owners = df_odds_melted.groupby('国名')['参加者'].apply(lambda x: ', '.join(dict.fromkeys(x))).reset_index()
+        df_owners.columns = ['国名', 'オッズした人']
+        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
+    else:
+        df_final_show = df_master.copy()
+        df_final_show['オッズした人'] = '—（未選択）'
+        
+    df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
+    
+    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点', 'is_eliminated']]
+    show_df = show_df.sort_values(by=['グループ', '国名']).reset_index(drop=True)
+
+    def style_eliminated_countries(row):
+        if row['is_eliminated']:
+            return ['background-color: #f0f2f6; color: #a3a8b4;'] * len(row)
+        return [''] * len(row)
+
+    styled_df = show_df.style.apply(style_eliminated_countries, axis=1)
+    
+    st.dataframe(
+        styled_df, 
+        use_container_width=True, 
+        hide_index=True,
+        column_order=['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点']
+    )
