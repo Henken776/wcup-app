@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
 st.set_page_config(page_title="W杯サッカーくじ集計システム", layout="wide")
 
 # スプレッドシートのベースURL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1_vlPH_Yl5zYKT4-5p5POZZLM1cJPbYwQ0yzUjF0FinA"
 
-# 各シートのID（固定）
-URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国のマスタ勝敗）
+# 各シートのID
+URL_COUNTRIES = f"{BASE_URL}/export?format=csv&gid=0"          # 1番目のシート（48カ国勝敗）
 URL_SETTINGS = f"{BASE_URL}/export?format=csv&gid=460959744"  # 2番目のシート（設定・コメント）
 URL_ODDS = f"{BASE_URL}/export?format=csv&gid=1519733841"     # 3番目のシート（オッズ）
 
@@ -18,67 +17,59 @@ def load_data():
         # 1. 48カ国の勝敗マスタを読み込み
         df_master = pd.read_csv(URL_COUNTRIES)
         
-        for col in ['グループ', '国名', 'オッズ', '勝ち数', '分け数', '負け数', '日付']:
-            if col not in df_master.columns:
-                st.error(f"「シート1」に '{col}' の列が見つかりません。")
-                return None, None, None, None, None
-        
-        # 数値列を確実に整数（int）としてキャスト
+        # 強制的に整数型に変換（小数の混入を根本から防ぐ）
         df_master['勝ち数'] = pd.to_numeric(df_master['勝ち数'], errors='coerce').fillna(0).astype(int)
         df_master['分け数'] = pd.to_numeric(df_master['分け数'], errors='coerce').fillna(0).astype(int)
         df_master['負け数'] = pd.to_numeric(df_master['負け数'], errors='coerce').fillna(0).astype(int)
         df_master['オッズ'] = pd.to_numeric(df_master['オッズ'], errors='coerce').fillna(1).astype(int)
         
-        # 日付・敗退判定のパース処理
+        # 日付と敗退判定
         df_master['生日付'] = df_master['日付'].fillna('').astype(str).str.strip()
+        df_master['is_eliminated'] = df_master['生日付'].apply(lambda x: '×' in x or 'X' in x.upper())
         
-        # 「×」や「X」が含まれているかチェックして敗退判定
-        df_master['is_eliminated'] = df_master['生日付'].apply(
-            lambda x: '×' in x or 'X' in x.upper()
-        )
-        
-        # 勝ち頭の履歴計算用（日付のみを抽出）
+        # 勝ち頭計算用のクレンジング
         df_master['表示日付'] = df_master['生日付'].apply(
             lambda x: x.upper().replace('D', '').replace('分', '').replace('△', '').strip()
         )
         df_master.loc[df_master['is_eliminated'], '表示日付'] = ''
         
-        # 勝ち点とポイントの計算（確実に整数化）
+        # ポイント計算
         df_master['勝ち点'] = df_master['勝ち数'] * 3 + df_master['分け数'] * 1
         df_master['ポイント'] = (df_master['オッズ'] * df_master['勝ち点']).astype(int)
         
-        # 国名ごとのポイント・オッズ・敗退フラグの辞書を作成（紐付けミスを防ぐため高精度にマッピング）
-        country_info = {}
+        # 国名マッピング用の安全な辞書
+        master_dict = {}
         for _, row in df_master.iterrows():
             c_name = str(row['国名']).strip()
-            country_info[c_name] = {
+            master_dict[c_name] = {
                 'ポイント': int(row['ポイント']),
                 'オッズ': int(row['オッズ']),
-                'is_eliminated': row['is_eliminated'],
-                '生日付': row['生日付']
+                'is_eliminated': row['is_eliminated']
             }
-        
-        # 2. 参加者のオッズデータを読み込み（横並び形式）
+            
+        # 2. オッズデータの読み込み（完全に独立して処理）
         df_odds_raw = pd.read_csv(URL_ODDS)
         df_odds_raw['参加者'] = df_odds_raw['参加者'].fillna('').astype(str).str.strip()
         df_odds_raw = df_odds_raw[df_odds_raw['参加者'] != ''].reset_index(drop=True)
         
-        # 横並び列（1〜8）の存在確認とクレンジング
+        # 1〜8の列を安全にクレンジング（小数を防ぐため、float型の nan や数値を文字列化）
         num_cols = [str(i) for i in range(1, 9)]
         for col in num_cols:
             if col in df_odds_raw.columns:
                 df_odds_raw[col] = df_odds_raw[col].fillna('').astype(str).str.strip()
+                # 万が一 '13.0' などの表記になってしまった場合の対策
+                df_odds_raw[col] = df_odds_raw[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
             else:
                 df_odds_raw[col] = ''
                 
-        # ランキング集計用に「1人に対してどの国を選んだか」を正確に1対1で縦型に変換
+        # 元の安定版と同じ集計用縦並びデータを100%安全に作成
         melted_rows = []
         for _, row in df_odds_raw.iterrows():
-            player = row['参加者']
+            p_name = row['参加者']
             for col in num_cols:
                 c_name = row[col]
                 if c_name and c_name != 'nan' and c_name != '':
-                    melted_rows.append({'参加者': player, '国名': c_name})
+                    melted_rows.append({'参加者': p_name, '国名': c_name})
         df_odds_melted = pd.DataFrame(melted_rows)
         
         # 3. 設定データの読み込み
@@ -94,41 +85,35 @@ def load_data():
             pass
             
         unique_dates = [d for d in df_master['表示日付'].unique() if d != '']
-        
         def parse_date_key(date_str):
             try:
                 m, d = map(int, date_str.split('/'))
                 return (m, d)
             except:
                 return (0, 0)
-                
         date_list = sorted(unique_dates, key=parse_date_key)
-            
-        return df_master, df_odds_raw, df_odds_melted, country_info, settings, date_list
+        
+        return df_master, df_odds_raw, df_odds_melted, master_dict, settings, date_list
     except Exception as e:
-        st.error(f"データの読み込みに失敗しました: {e}")
+        st.error(f"データ読込失敗: {e}")
         return None, None, None, None, None, None
 
-df_master, df_odds_raw, df_odds_melted, country_info, settings, date_list = load_data()
+df_master, df_odds_raw, df_odds_melted, master_dict, settings, date_list = load_data()
 
-# 特定の日の「その日単体」の獲得ポイントマップを計算
+# 特定日の獲得ポイントマップ
 def get_daily_points_dict(dt, df_master_data):
     day_countries = df_master_data[df_master_data['表示日付'] == dt]
     pts_dict = {}
     for _, row in day_countries.iterrows():
         raw_date_upper = row['生日付'].upper()
-        if 'D' in raw_date_upper or '分' in raw_date_upper or '△' in raw_date_upper:
-            match_pt = 1
-        else:
-            match_pt = 3
+        match_pt = 1 if ('D' in raw_date_upper or '分' in raw_date_upper or '△' in raw_date_upper) else 3
         pts_dict[row['国名']] = int(match_pt * row['オッズ'])
     return pts_dict
 
-# 特定の日の勝ち頭テキストを計算
+# 勝ち頭サマリー計算
 def get_day_summary(dt, df_odds_melted_data, df_master_data):
     winner_str = "該当なし"
     hit_countries_str = "なし"
-    
     day_pts_dict = get_daily_points_dict(dt, df_master_data)
     
     if day_pts_dict and not df_odds_melted_data.empty:
@@ -143,33 +128,24 @@ def get_day_summary(dt, df_odds_melted_data, df_master_data):
             max_pt = max(player_day_pts.values())
             top_players = [p for p, pt in player_day_pts.items() if pt == max_pt]
             
-            formatted_players = []
-            for i, player in enumerate(top_players):
-                if i == 0:
-                    formatted_players.append(f"🏆 {player} さん")
-                else:
-                    formatted_players.append(f"👥 {player} さん")
+            formatted_players = [f"🏆 {p} さん" if i == 0 else f"👥 {p} さん" for i, p in enumerate(top_players)]
             winner_str = "、".join(formatted_players) + f" (+{int(max_pt)} pt)"
             
             leader = top_players[0]
-            leader_odds_countries = df_odds_melted_data[df_odds_melted_data['参加者'] == leader]['国名'].tolist()
-            leader_hit_countries = [c for c in leader_odds_countries if c in day_pts_dict]
-            if leader_hit_countries:
-                hit_countries_str = "、".join(leader_hit_countries)
-            
+            leader_hit = df_odds_melted_data[(df_odds_melted_data['参加者'] == leader) & (df_odds_melted_data['国名'].isin(day_pts_dict))]['国名'].tolist()
+            if leader_hit:
+                hit_countries_str = "、".join(leader_hit)
+                
     return f"**【勝ち頭】** {winner_str}  \n**【勝ち頭のオッズした国】** {hit_countries_str}"
 
-if df_master is None or df_master.empty:
-    st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
-else:
+if df_master is not None and not df_master.empty:
     st.title("🏆 W杯サッカーくじ集計システム")
     st.write("---")
     
     # ==========================================
-    # 📢 今日の勝ち頭（2日分） ＆ 管理人コメントエリア
+    # 📢 今日の勝ち頭 ＆ 管理人コメントエリア
     # ==========================================
     col_history, col_my = st.columns(2)
-    
     with col_history:
         st.subheader("📅 今日の勝ち頭（2日分）")
         if date_list:
@@ -183,99 +159,75 @@ else:
                     st.write(f"⚪ **昨日分 ({dt})** \n{summary_text}")
                     st.write("---")
         else:
-            st.info("シート1の「日付」列に日付が入力されると、ここに自動表示されます。")
+            st.info("日付が入力されると自動表示されます。")
             
     with col_my:
-        st.subheader("💬 管理人コメント欄（不定期更新）")
+        st.subheader("💬 管理人コメント欄")
         if settings and settings['my_comment']:
             st.success(settings['my_comment'].replace('\n', '  \n'))
         else:
-            st.success("ここに管理人からのコメントが表示されます。")
+            st.success("コメントはありません。")
             
     st.write("---")
 
     # ==========================================
-    # 1. 参加者ランキング（完全復旧・狂いのない整数表示）
+    # 1. 参加者ランキング（完全復旧・整数表示）
     # ==========================================
     st.header("📊 参加者ランキング")
-    if not df_odds_melted.empty and len(df_odds_melted) > 0:
+    if not df_odds_melted.empty:
         latest_date_str = date_list[-1] if date_list else "当日"
         today_col_name = f"{latest_date_str} ポイント"
         
-        # 各参加者が選んだ国のポイントを正確に加算
-        player_total_pts = {}
-        for player in df_odds_raw['参加者']:
-            player_total_pts[player] = 0
-            
-        for _, row in df_odds_melted.iterrows():
-            p_name = row['参加者']
-            c_name = row['国名']
-            if c_name in country_info:
-                player_total_pts[p_name] += country_info[c_name]['ポイント']
-                
-        ranking_df = pd.DataFrame(list(player_total_pts.items()), columns=['参加者', '総ポイント'])
+        # 総ポイント計算
+        ranking_df = pd.merge(df_odds_melted, df_master[['国名', 'ポイント']], on='国名', how='left')
+        ranking_df['ポイント'] = ranking_df['ポイント'].fillna(0).astype(int)
+        res_df = ranking_df.groupby('参加者')['ポイント'].sum().reset_index()
+        res_df.columns = ['参加者', '総ポイント']
         
-        # 当日ポイントの計算
-        player_today_pts = {p: 0 for p in df_odds_raw['参加者']}
-        if date_list:
-            latest_date = date_list[-1]
-            latest_day_map = get_daily_points_dict(latest_date, df_master)
-            for _, row in df_odds_melted.iterrows():
-                p_name = row['参加者']
-                c_name = row['国名']
-                if c_name in latest_day_map:
-                    player_today_pts[p_name] += latest_day_map[c_name]
-                    
-        df_today = pd.DataFrame(list(player_today_pts.items()), columns=['参加者', today_col_name])
-        ranking_df = pd.merge(ranking_df, df_today, on='参加者', how='left')
+        # 当日ポイント計算
+        latest_day_map = get_daily_points_dict(date_list[-1], df_master) if date_list else {}
+        df_odds_melted['当日点'] = df_odds_melted['国名'].map(latest_day_map).fillna(0).astype(int)
+        today_df = df_odds_melted.groupby('参加者')['当日点'].sum().reset_index()
+        today_df.columns = ['参加者', today_col_name]
         
-        ranking_df['総ポイント'] = ranking_df['総ポイント'].astype(int)
-        ranking_df[today_col_name] = ranking_df[today_col_name].astype(int)
+        # ドッキング
+        final_ranking = pd.merge(res_df, today_df, on='参加者', how='left')
+        final_ranking['総ポイント'] = final_ranking['総ポイント'].astype(int)
+        final_ranking[today_col_name] = final_ranking[today_col_name].fillna(0).astype(int)
         
-        # 平均点と収支の計算
-        average_point = ranking_df['総ポイント'].mean() if len(ranking_df) > 0 else 0
-        ranking_df['収支ポイント'] = ranking_df['総ポイント'] - average_point
-        ranking_df['収支ポイント'] = ranking_df['収支ポイント'].round(1)
+        # 収支計算
+        average_point = final_ranking['総ポイント'].mean() if len(final_ranking) > 0 else 0
+        final_ranking['収支ポイント'] = final_ranking['総ポイント'] - average_point
+        final_ranking['収支ポイント'] = final_ranking['収支ポイント'].round(1)
         
-        ranking_df = ranking_df.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
-        ranking_df = ranking_df[['参加者', '総ポイント', today_col_name, '収支ポイント']]
+        final_ranking = final_ranking.sort_values(by='総ポイント', ascending=False).reset_index(drop=True)
+        final_ranking = final_ranking[['参加者', '総ポイント', today_col_name, '収支ポイント']]
         
-        st.dataframe(ranking_df, use_container_width=True)
+        st.dataframe(final_ranking, use_container_width=True)
         st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt）")
-    else:
-        st.info("オッズシートに参加者のデータが入力されると、ここにランキングが表示されます。")
 
     st.write("---")
 
     # ==========================================
-    # 📋 ⭐【イメージ完全再現】オッズ国ステータス一覧
+    # 📋 ⭐【完全独立・新設】オッズ国ステータス一覧
     # ==========================================
     st.header("📋 オッズ国ステータス一覧")
     if not df_odds_raw.empty:
-        # スプレッドシートそのままの「参加者」「1」〜「8」の列を抽出
-        cols_to_show = ['参加者'] + [str(i) for i in range(1, 9)]
-        status_display_df = df_odds_raw[cols_to_show].copy()
+        # スプレッドシートそのままの「参加者」と「1〜8」の列のみを安全に抽出
+        status_cols = ['参加者'] + [str(i) for i in range(1, 9)]
+        status_display_df = df_odds_raw[status_cols].copy()
         
-        # 各マス目をチェックし、シート1で×がついている国名だけを正確にグレーアウト
+        # マス目単位で「×」の国だけをピンポイントでグレーアウトする関数
         def style_cells(val):
             cleaned_val = str(val).strip()
-            if cleaned_val in country_info:
-                if country_info[cleaned_val]['is_eliminated']:
-                    return 'background-color: #f0f2f6; color: #a3a8b4; font-weight: bold; text-decoration: line-through;'
+            if cleaned_val in master_dict:
+                if master_dict[cleaned_val]['is_eliminated']:
+                    # 脱落した国をグレーアウト
+                    return 'background-color: #f0f2f6; color: #a3a8b4; font-weight: normal; text-decoration: line-through;'
             return ''
 
-        styled_status_df = status_display_df.style.applymap(
-            style_cells, 
-            subset=[str(i) for i in range(1, 9)]
-        )
-        
-        st.dataframe(
-            styled_status_df,
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.info("オッズデータが見つかりません。")
+        styled_status_df = status_display_df.style.applymap(style_cells, subset=[str(i) for i in range(1, 9)])
+        st.dataframe(styled_status_df, use_container_width=True, hide_index=True)
 
     st.write("---")
 
@@ -283,14 +235,12 @@ else:
     # 2. 各国の詳細 data 一覧
     # ==========================================
     st.header("⚽ 全48カ国 ステータス一覧")
-    if not df_odds_melted.empty:
-        df_owners = df_odds_melted.groupby('国名')['参加者'].apply(lambda x: ', '.join(dict.fromkeys(x))).reset_index()
-        df_owners.columns = ['国名', 'オッズした人']
-        df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
-    else:
-        df_final_show = df_master.copy()
-        df_final_show['オッズした人'] = '—（未選択）'
-        
+    
+    # オッズした人の文字列結合
+    df_owners = df_odds_melted.groupby('国名')['参加者'].apply(lambda x: ', '.join(dict.fromkeys(x))).reset_index()
+    df_owners.columns = ['国名', 'オッズした人']
+    
+    df_final_show = pd.merge(df_master, df_owners, on='国名', how='left')
     df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
     
     show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点', 'is_eliminated']]
@@ -302,7 +252,6 @@ else:
         return [''] * len(row)
 
     styled_df = show_df.style.apply(style_eliminated_countries, axis=1)
-    
     st.dataframe(
         styled_df, 
         use_container_width=True, 
