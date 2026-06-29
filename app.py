@@ -47,12 +47,25 @@ def load_data():
         df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']
         df_master['ポイント'] = df_master['ポイント'].astype(int)
         
-        # 2. 参加者のオッズデータを読み込み
+        # 2. 参加者のオッズデータを読み込み（画像 image_be6a3d.png の横並び形式に対応）
         try:
-            df_odds = pd.read_csv(URL_ODDS)
-            df_odds['参加者'] = df_odds['参加者'].fillna('未選択').astype(str).str.strip()
-            df_odds['国名'] = df_odds['国名'].astype(str).str.strip()
-        except:
+            df_odds_raw = pd.read_csv(URL_ODDS)
+            # 行全体の空欄排除と前後の空白クレンジング
+            df_odds_raw['参加者'] = df_odds_raw['参加者'].fillna('').astype(str).str.strip()
+            df_odds_raw = df_odds_raw[df_odds_raw['参加者'] != '']
+            
+            # 横並びの「1」〜「8」列を縦並び（参加者, 国名）に変換
+            melted_rows = []
+            num_cols = [str(i) for i in range(1, 9)]
+            for col in num_cols:
+                if col in df_odds_raw.columns:
+                    for _, row in df_odds_raw.iterrows():
+                        c_name = str(row[col]).strip()
+                        if c_name and c_name != 'nan':
+                            melted_rows.append({'参加者': row['参加者'], '国名': c_name})
+            df_odds = pd.DataFrame(melted_rows)
+        except Exception as e:
+            st.error(f"オッズシートの変換に失敗しました: {e}")
             df_odds = pd.DataFrame(columns=['参加者', '国名'])
             
         # 3. 設定データの読み込み
@@ -226,6 +239,44 @@ else:
         st.caption(f"（※現在の実際の参加者平均ポイント: {average_point:.1f} pt）")
     else:
         st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
+
+    st.write("---")
+
+    # ==========================================
+    # ⭐【新機能】参加者ごとのオッズ国ステータス一覧
+    # ==========================================
+    st.header("📋 参加者オッズ国ステータス一覧")
+    if not df_odds.empty:
+        # 参加者が選んだ国ごとにマスタのポイント・オッズ・日付・敗退情報を結合
+        df_player_status = pd.merge(df_odds, df_master[['国名', 'グループ', 'ポイント', 'オッズ', '日付', 'is_eliminated']], on='国名', how='left')
+        df_player_status['ポイント'] = df_player_status['ポイント'].fillna(0).astype(int)
+        df_player_status['オッズ'] = df_player_status['オッズ'].fillna(1).astype(int)
+        df_player_status['日付'] = df_player_status['日付'].fillna('—')
+        
+        # 参加者名、グループ、国名の順に綺麗にソート
+        df_player_status = df_player_status.sort_values(by=['参加者', 'グループ', '国名']).reset_index(drop=True)
+        
+        # 並び替えと表示用データの確定
+        show_player_df = df_player_status[['参加者', 'グループ', '国名', 'ポイント', 'オッズ', '日付', 'is_eliminated']]
+
+        # スタイリング関数（シート1で×がついた国をグレーアウト）
+        def style_player_countries(row):
+            if row['is_eliminated']:
+                return ['background-color: #f0f2f6; color: #a3a8b4;'] * len(row)
+            return [''] * len(row)
+
+        styled_player_df = show_player_df.style.apply(style_player_countries, axis=1)
+
+        st.dataframe(
+            styled_player_df,
+            use_container_width=True,
+            hide_index=True,
+            column_order=['参加者', 'グループ', '国名', 'ポイント', 'オッズ', '日付']
+        )
+    else:
+        st.info("参加者のデータが不足しています。")
+
+    st.write("---")
 
     # ==========================================
     # 2. 各国の詳細 data 一覧
