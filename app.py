@@ -27,11 +27,20 @@ def load_data():
         df_master['負け数'] = df_master['負け数'].fillna(0).astype(int)
         df_master['オッズ'] = df_master['オッズ'].fillna(1.0).astype(float)
         
-        # 日付パース処理（d, D, 分 などの引き分け記号を綺麗にクレンジング）
+        # 日付・敗退判定のパース処理
         df_master['生日付'] = df_master['日付'].fillna('').astype(str).str.strip()
+        
+        # 大文字小文字の「X」や「×」が含まれているかチェック
+        df_master['is_eliminated'] = df_master['生日付'].apply(
+            lambda x: '×' in x or 'X' in x.upper()
+        )
+        
+        # 勝ち頭の履歴計算用（×やDを排除した純粋な日付文字列を作る）
         df_master['表示日付'] = df_master['生日付'].apply(
             lambda x: x.upper().replace('D', '').replace('分', '').replace('△', '').strip()
         )
+        # 敗退マーク（×）のみのセルは、日付リストから除外するために空欄にする
+        df_master.loc[df_master['is_eliminated'], '表示日付'] = ''
         
         df_master['勝ち点'] = df_master['勝ち数'] * 3 + df_master['分け数'] * 1
         df_master['ポイント'] = df_master['オッズ'] * df_master['勝ち点']
@@ -76,14 +85,12 @@ df_master, df_odds, settings, date_list = load_data()
 
 # 特定の日の「その日単体」の獲得ポイントマップを計算する関数
 def get_daily_points_dict(dt, df_master_data):
-    # dt は '6/26' などの綺麗な日付
     day_countries = df_master_data[df_master_data['表示日付'] == dt]
     pts_dict = {}
     
     for _, row in day_countries.iterrows():
         raw_date_upper = row['生日付'].upper()
         
-        # 日付の後ろに「D」「d」「分」「△」がついていたら引き分け（1点）、それ以外は勝ち（3点）
         if 'D' in raw_date_upper or '分' in raw_date_upper or '△' in raw_date_upper:
             match_pt = 1.0
         else:
@@ -219,7 +226,7 @@ else:
         st.info("「オッズ」シートに参加者のデータが入力されると、ここにランキングが表示されます。")
 
     # ==========================================
-    # 2. 各国の詳細データ一覧
+    # 2. 各国の詳細 data 一覧（×判定グレーアウト）
     # ==========================================
     st.header("⚽ 全48カ国 ステータス一覧")
     if not df_odds.empty:
@@ -232,6 +239,24 @@ else:
         
     df_final_show['オッズした人'] = df_final_show['オッズした人'].fillna('—（未選択）')
     
-    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点']]
+    show_df = df_final_show[['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点', 'is_eliminated']]
     show_df['ポイント'] = show_df['ポイント'].round(1)
-    st.dataframe(show_df.sort_values(by=['グループ', '国名']), use_container_width=True, hide_index=True)
+    
+    # 昇順ソート
+    show_df = show_df.sort_values(by=['グループ', '国名']).reset_index(drop=True)
+
+    # 🎨 【修正】日付欄に「×」が入っている行をグレーアウトするスタイリング関数
+    def style_eliminated_countries(row):
+        if row['is_eliminated']:
+            return ['background-color: #f0f2f6; color: #a3a8b4;'] * len(row)
+        return [''] * len(row)
+
+    # スタイルを適用（画面表示に不要な「is_eliminated」列は非表示にする）
+    styled_df = show_df.style.apply(style_eliminated_countries, axis=1)
+    
+    st.dataframe(
+        styled_df, 
+        use_container_width=True, 
+        hide_index=True,
+        column_order=['グループ', '国名', 'ポイント', 'オッズした人', 'オッズ', '勝ち数', '分け数', '負け数', '日付', '勝ち点']
+    )
