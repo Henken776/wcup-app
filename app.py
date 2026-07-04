@@ -142,6 +142,12 @@ if df_master is None or df_master.empty:
     st.warning("⚠️ スプレッドシートのデータが正しく読み込めませんでした。")
 else:
     st.title("🏆 W杯サッカーくじ集計システム")
+    
+    # 🔄 【新規追加】キャッシュクリア＆最新データ更新ボタン
+    if st.button("🔄 最新データに更新する（キャッシュクリア）", type="primary"):
+        st.cache_data.clear()
+        st.rerun()
+        
     st.write("---")
     
     # ==========================================
