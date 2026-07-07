@@ -104,48 +104,60 @@ def get_daily_points_dict(dt, df_master_data):
 
 # 特定の日の勝ち頭テキストを計算するヘルパー関数
 def get_day_summary(dt, df_odds_data, df_master_data):
-    winner_str = "該当なし"
-    hit_countries_str = "なし"
-    
     day_pts_dict = get_daily_points_dict(dt, df_master_data)
     
-    if day_pts_dict and not df_odds_data.empty:
-        # 参加者ごとの「その日の実際の合計点」を確実に集計する
-        player_day_pts = {}
+    if not day_pts_dict or df_odds_data.empty:
+        return "**【勝ち頭】** 該当なし  \n**【勝ち頭のオッズした国】** なし"
         
-        # 念のため、オッズシートの全行に対してループを回し、その日の対象国があれば確実に加算
-        for idx, row in df_odds_data.iterrows():
-            player = row['参加者']
-            c_name = row['国名']
-            if c_name in day_pts_dict:
-                current_pt = day_pts_dict[c_name]
-                player_day_pts[player] = player_day_pts.get(player, 0) + current_pt
-                
-        if player_day_pts:
-            max_pt = max(player_day_pts.values())
-            top_players = [p for p, pt in player_day_pts.items() if pt == max_pt]
+    # 1. 参加者ごとのその日の合計点を計算
+    player_day_pts = {}
+    player_hit_countries = {} # 各人がどの国を当てたかも記録
+    
+    for idx, row in df_odds_data.iterrows():
+        player = row['参加者']
+        c_name = row['国名']
+        if c_name in day_pts_dict:
+            player_day_pts[player] = player_day_pts.get(player, 0) + day_pts_dict[c_name]
+            if player not in player_hit_countries:
+                player_hit_countries[player] = []
+            player_hit_countries[player].append(c_name)
             
-            formatted_players = []
-            for i, player in enumerate(top_players):
-                if i == 0:
-                    formatted_players.append(f"🏆 {player} さん")
-                else:
-                    formatted_players.append(f"👥 {player} さん")
+    if not player_day_pts:
+        return "**【勝ち頭】** 該当なし  \n**【勝ち頭のオッズした国】** なし"
+        
+    max_pt = max(player_day_pts.values())
+    top_players = [p for p, pt in player_day_pts.items() if pt == max_pt]
+    
+    # 2. 国ごとにグループ分けして綺麗にテキスト化する
+    # 例: {"ベルギー": ["高野連", "女神"], "スペイン": ["神"]}
+    country_groups = {}
+    all_hit_countries = set()
+    
+    for p in top_players:
+        countries = sorted(player_hit_countries.get(p, []))
+        c_key = "、".join(countries)
+        if c_key not in country_groups:
+            country_groups[c_key] = []
+        country_groups[c_key].append(p)
+        for c in countries:
+            all_hit_countries.add(c)
             
-            winner_str = "、".join(formatted_players) + f" (+{int(max_pt)} pt)"
-            
-            # 勝ち頭の全員が対象日に実際に当てた国のみを重複なく抽出する
-            all_hit_countries = set()
-            for player in top_players:
-                # 該当プレイヤーが持っている国を全スキャン
-                player_countries = df_odds_data[df_odds_data['参加者'] == player]['国名'].tolist()
-                for c in player_countries:
-                    if c in day_pts_dict:
-                        all_hit_countries.add(c)
-            
-            if all_hit_countries:
-                hit_countries_str = "、".join(sorted(list(all_hit_countries)))
-            
+    # テキストの組み立て
+    winner_lines = []
+    is_first = True
+    for c_key, players in country_groups.items():
+        p_strs = []
+        for p in players:
+            if is_first:
+                p_strs.append(f"🏆 {p} さん")
+                is_first = False
+            else:
+                p_strs.append(f"👥 {p} さん")
+        winner_lines.append(f"{'、'.join(p_strs)} ({c_key}: +{int(max_pt)} pt)")
+        
+    winner_str = "  \n&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".join(winner_lines)
+    hit_countries_str = "、".join(sorted(list(all_hit_countries)))
+    
     return f"**【勝ち頭】** {winner_str}  \n**【勝ち頭のオッズした国】** {hit_countries_str}"
 
 if df_master is None or df_master.empty:
