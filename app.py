@@ -129,12 +129,17 @@ def get_day_summary(dt, df_odds_data, df_master_data):
                     formatted_players.append(f"👥 {player} さん")
             winner_str = "、".join(formatted_players) + f" (+{int(max_pt)} pt)"
             
-            leader = top_players[0]
-            leader_odds_countries = df_odds_data[df_odds_data['参加者'] == leader]['国名'].tolist()
+            # 【バグ修正箇所】勝ち頭の「全員」が対象日に持っていた国を重複なくすべて集計する
+            all_hit_countries = set()
+            for player in top_players:
+                player_countries = df_odds_data[df_odds_data['参加者'] == player]['国名'].tolist()
+                for c in player_countries:
+                    if c in day_pts_dict:
+                        all_hit_countries.add(c)
             
-            leader_hit_countries = [c for c in leader_odds_countries if c in day_pts_dict]
-            if leader_hit_countries:
-                hit_countries_str = "、".join(leader_hit_countries)
+            if all_hit_countries:
+                # 順序を一定にするためソートして結合
+                hit_countries_str = "、".join(sorted(list(all_hit_countries)))
             
     return f"**【勝ち頭】** {winner_str}  \n**【勝ち頭のオッズした国】** {hit_countries_str}"
 
@@ -143,7 +148,7 @@ if df_master is None or df_master.empty:
 else:
     st.title("🏆 W杯サッカーくじ集計システム")
     
-    # 🔄 【新規追加】キャッシュクリア＆最新データ更新ボタン
+    # 🔄 キャッシュクリア＆最新データ更新ボタン
     if st.button("🔄 最新データに更新する（キャッシュクリア）", type="primary"):
         st.cache_data.clear()
         st.rerun()
