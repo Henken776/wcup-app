@@ -110,12 +110,16 @@ def get_day_summary(dt, df_odds_data, df_master_data):
     day_pts_dict = get_daily_points_dict(dt, df_master_data)
     
     if day_pts_dict and not df_odds_data.empty:
+        # 参加者ごとの「その日の実際の合計点」を確実に集計する
         player_day_pts = {}
-        for _, row in df_odds_data.iterrows():
+        
+        # 念のため、オッズシートの全行に対してループを回し、その日の対象国があれば確実に加算
+        for idx, row in df_odds_data.iterrows():
             player = row['参加者']
             c_name = row['国名']
             if c_name in day_pts_dict:
-                player_day_pts[player] = player_day_pts.get(player, 0) + day_pts_dict[c_name]
+                current_pt = day_pts_dict[c_name]
+                player_day_pts[player] = player_day_pts.get(player, 0) + current_pt
                 
         if player_day_pts:
             max_pt = max(player_day_pts.values())
@@ -127,18 +131,19 @@ def get_day_summary(dt, df_odds_data, df_master_data):
                     formatted_players.append(f"🏆 {player} さん")
                 else:
                     formatted_players.append(f"👥 {player} さん")
+            
             winner_str = "、".join(formatted_players) + f" (+{int(max_pt)} pt)"
             
-            # 【バグ修正箇所】勝ち頭の「全員」が対象日に持っていた国を重複なくすべて集計する
+            # 勝ち頭の全員が対象日に実際に当てた国のみを重複なく抽出する
             all_hit_countries = set()
             for player in top_players:
+                # 該当プレイヤーが持っている国を全スキャン
                 player_countries = df_odds_data[df_odds_data['参加者'] == player]['国名'].tolist()
                 for c in player_countries:
                     if c in day_pts_dict:
                         all_hit_countries.add(c)
             
             if all_hit_countries:
-                # 順序を一定にするためソートして結合
                 hit_countries_str = "、".join(sorted(list(all_hit_countries)))
             
     return f"**【勝ち頭】** {winner_str}  \n**【勝ち頭のオッズした国】** {hit_countries_str}"
