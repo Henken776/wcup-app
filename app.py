@@ -129,7 +129,6 @@ def get_day_summary(dt, df_odds_data, df_master_data):
     top_players = [p for p, pt in player_day_pts.items() if pt == max_pt]
     
     # 2. 国ごとにグループ分けして綺麗にテキスト化する
-    # 例: {"ベルギー": ["高野連", "女神"], "スペイン": ["神"]}
     country_groups = {}
     all_hit_countries = set()
     
@@ -185,6 +184,7 @@ else:
             latest_dates.reverse()
             
             for idx, dt in enumerate(latest_dates):
+                # ★【修正箇所】古い変数名 df_odds_melted を正しい df_odds に修正
                 summary_text = get_day_summary(dt, df_odds, df_master)
                 if idx == 0:
                     st.info(f"🟢 **本日分 ({dt})** \n{summary_text}")
